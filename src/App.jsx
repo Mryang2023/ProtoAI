@@ -8,7 +8,7 @@ import AISettingsModal from './components/AISettingsModal.jsx';
 import VersionHistory from './components/VersionHistory.jsx';
 import { planProject, generateProjectPages, readFileContents, capturePageAsImage, refinePage, regenerateSinglePage, buildStyleSpec } from './aiService.js';
 
-const PROVIDER_NAMES = { openai: 'OpenAI', claude: 'Claude', custom: '本地模型' };
+const PROVIDER_NAMES = { openai: 'OpenAI', claude: 'Claude', custom: 'Mimo' };
 
 function formatTime(date) {
   const h = date.getHours().toString().padStart(2, '0');
@@ -62,10 +62,16 @@ export default function App() {
   const [isRefining, setIsRefining] = useState(false);
   const [isRegenerating, setIsRegenerating] = useState(false);
 
-  // AI settings
+  // AI settings — pre-configured with default model
   const [showSettings, setShowSettings] = useState(false);
-  const [aiConfig, setAiConfig] = useState({});
-  const [activeProvider, setActiveProvider] = useState('openai');
+  const [aiConfig, setAiConfig] = useState({
+    custom: {
+      apiKey: 'tp-s8015ckz5f83j4ok8irjjb1ul18s57t6pgz8r26jog63gsb6',
+      endpoint: 'https://token-plan-sgp.xiaomimimo.com/v1',
+      model: 'mimo-v2.5-pro',
+    },
+  });
+  const [activeProvider, setActiveProvider] = useState('custom');
 
   const activeModel = useMemo(() => {
     const provider = PROVIDER_NAMES[activeProvider] || activeProvider;

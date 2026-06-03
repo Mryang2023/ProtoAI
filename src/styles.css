@@ -776,6 +776,16 @@ body {
   color: var(--danger);
 }
 
+.page-nav-tab:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.page-nav-tab:disabled:hover {
+  background: transparent;
+  color: var(--fg-muted);
+}
+
 .page-nav-name {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1788,6 +1798,66 @@ body {
 /* ============================================
    Progress State (Right Panel)
    ============================================ */
+
+/* Compact progress bar (always visible at top during generation) */
+.compact-progress-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-4);
+  background: var(--surface);
+  border-bottom: 1px solid var(--border-light);
+  flex-shrink: 0;
+}
+
+.compact-progress-track {
+  width: 120px;
+  height: 6px;
+  background: var(--bg-hover);
+  border-radius: var(--radius-pill);
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.compact-progress-fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: var(--radius-pill);
+  transition: width 0.4s var(--ease-default);
+}
+
+.compact-progress-text {
+  font-size: var(--text-xs);
+  color: var(--fg-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+}
+
+.compact-progress-back {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  padding: var(--sp-1) var(--sp-2);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--accent);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: all var(--duration-fast) var(--ease-default);
+}
+
+.compact-progress-back:hover {
+  background: var(--accent-subtle);
+  border-color: var(--accent);
+}
+
+/* Progress state container */
 .progress-state {
   display: flex;
   flex-direction: column;
@@ -1904,6 +1974,23 @@ body {
 
 .progress-preview-card.done {
   border-color: var(--success);
+}
+
+.progress-preview-card.done.clickable {
+  cursor: pointer;
+  transition: border-color var(--duration-fast) var(--ease-default),
+              box-shadow var(--duration-fast) var(--ease-default),
+              transform var(--duration-fast) var(--ease-default);
+}
+
+.progress-preview-card.done.clickable:hover {
+  box-shadow: var(--shadow-md);
+  transform: translateY(-2px);
+  border-color: var(--accent);
+}
+
+.progress-preview-card.done.clickable:active {
+  transform: translateY(0);
 }
 
 .progress-preview-card.generating {

@@ -50,6 +50,9 @@ export default function App() {
   const [plannedPages, setPlannedPages] = useState(null);
   const [plannedStyleSpec, setPlannedStyleSpec] = useState('');
 
+  // Flag: user manually selected a page to preview during generation
+  const [userSelectedPage, setUserSelectedPage] = useState(false);
+
   // Current page html (derived)
   const generatedHtml = pages[currentPageIndex]?.html || '';
 
@@ -128,6 +131,7 @@ export default function App() {
     setProgressTotal(plannedPages.length);
     setPages([]);
     setCurrentPageIndex(0);
+    setUserSelectedPage(false);
     // Keep plannedPages visible — user can track each page's progress
 
     try {
@@ -143,7 +147,10 @@ export default function App() {
             next[index] = pageResult;
             return next;
           });
-          setCurrentPageIndex(index);
+          // Don't override user's manual page selection
+          if (!userSelectedPage) {
+            setCurrentPageIndex(index);
+          }
         }
       );
 
@@ -175,8 +182,9 @@ export default function App() {
       setProgressCurrent(0);
       setProgressTotal(0);
       setPlannedPages(null); // now hide plan, generation is done
+      setUserSelectedPage(false);
     }
-  }, [plannedPages, plannedStyleSpec, contentDesc, selectedStyles, styleDesc, aiConfig, activeProvider]);
+  }, [plannedPages, plannedStyleSpec, contentDesc, selectedStyles, styleDesc, aiConfig, activeProvider, userSelectedPage]);
 
   // Cancel plan
   const handleCancelPlan = useCallback(() => {
@@ -431,7 +439,9 @@ export default function App() {
             setCurrentPageIndex(index);
             setCode(pages[index]?.html || '');
             setMessages([]);
+            if (isGenerating) setUserSelectedPage(true);
           }}
+          onUserSelectPage={() => setUserSelectedPage(true)}
           refinePanel={
             <RefinePanel
               code={code}

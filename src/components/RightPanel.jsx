@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import {
   Monitor, Tablet, Smartphone, RefreshCw, ZoomIn, ZoomOut,
   Download, FileDown, Archive, Image, Images,
-  Sparkles, AlertCircle, ChevronDown, CheckCircle2,
+  Sparkles, AlertCircle, ChevronDown, CheckCircle2, ArrowLeft,
 } from 'lucide-react';
 
 export default function RightPanel({
@@ -10,13 +10,25 @@ export default function RightPanel({
   onExport, onExportAll, onExportImage, onExportAllImages,
   refinePanel, error, progress, progressCurrent, progressTotal,
   plannedPages, pages, currentPageIndex, onPageChange,
+  onUserSelectPage,
 }) {
   const [device, setDevice] = useState('desktop');
   const [zoom, setZoom] = useState(100);
   const [showExportMenu, setShowExportMenu] = useState(false);
+  const [userPreviewIndex, setUserPreviewIndex] = useState(null);
   const exportRef = useRef(null);
 
   const hasMultiplePages = pages.filter((p) => p.html).length > 1;
+
+  // Reset local preview when generation finishes
+  useEffect(() => {
+    if (!isGenerating) setUserPreviewIndex(null);
+  }, [isGenerating]);
+
+  // Determine which HTML to show in the preview
+  const previewHtml = (isGenerating && userPreviewIndex !== null)
+    ? (pages[userPreviewIndex]?.html || '')
+    : generatedHtml;
   const devices = [
     { id: 'desktop', icon: Monitor, label: '桌面' },
     { id: 'tablet', icon: Tablet, label: '平板' },
@@ -32,10 +44,39 @@ export default function RightPanel({
     return () => document.removeEventListener('mousedown', handler);
   }, [showExportMenu]);
 
+  // Handler: user clicks a page (from tabs or progress grid)
+  const handleSelectPage = (index) => {
+    if (isGenerating) {
+      setUserPreviewIndex(index);
+      if (onUserSelectPage) onUserSelectPage();
+    }
+    onPageChange(index);
+  };
+
+  const showProgressDuringGen = isGenerating && !previewHtml;
+
   return (
     <div className="right-panel" data-component="Right Panel" data-od-id="right-panel">
+      {/* Compact progress bar during generation (always visible at top) */}
+      {isGenerating && progressTotal > 0 && (
+        <div className="compact-progress-bar">
+          <div className="compact-progress-track">
+            <div className="compact-progress-fill"
+              style={{ width: `${progressTotal > 0 ? Math.round((progressCurrent / progressTotal) * 100) : 0}%` }} />
+          </div>
+          <span className="compact-progress-text">
+            {progressCurrent}/{progressTotal} {progress || '准备中...'}
+          </span>
+          {userPreviewIndex !== null && (
+            <button className="compact-progress-back" onClick={() => setUserPreviewIndex(null)}>
+              <ArrowLeft size={12} />返回进度
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Preview toolbar */}
-      {generatedHtml && (
+      {previewHtml && (
         <div className="preview-toolbar">
           <div className="preview-toolbar-left">
             {devices.map((d) => {
@@ -85,19 +126,28 @@ export default function RightPanel({
         </div>
       )}
 
-      {/* Page navigation */}
-      {pages.length > 1 && (
+      {/* Page navigation — show when multiple pages exist (including during generation) */}
+      {(pages.filter((p) => p?.html).length > 1 || (isGenerating && plannedPages && plannedPages.length > 1)) && (
         <div className="page-nav" data-component="Page Navigation" data-od-id="page-nav">
-          {pages.map((page, i) => (
-            <button key={`${page.route}-${i}`}
-              className={`page-nav-tab${i === currentPageIndex ? ' active' : ''}${page.error ? ' has-error' : ''}`}
-              onClick={() => onPageChange(i)} title={page.description || page.name}
-              aria-label={`切换到页面：${page.name}`} aria-pressed={i === currentPageIndex}>
-              <span className="page-nav-name">{page.name}</span>
-              {page.html && !page.error && <CheckCircle2 size={11} className="page-nav-done" />}
-              {page.error && <AlertCircle size={12} className="page-nav-error" />}
-            </button>
-          ))}
+          {(plannedPages || pages).map((page, i) => {
+            const pageData = pages[i];
+            const isDone = pageData?.html && !pageData?.error;
+            const isCurrent = isGenerating && userPreviewIndex !== null
+              ? i === userPreviewIndex
+              : i === currentPageIndex;
+            return (
+              <button key={`nav-${page.name || page.route}-${i}`}
+                className={`page-nav-tab${isCurrent ? ' active' : ''}${pageData?.error ? ' has-error' : ''}`}
+                onClick={() => isDone && handleSelectPage(i)}
+                disabled={isGenerating && !isDone}
+                title={page.description || page.name}
+                aria-label={`切换到页面：${page.name}`} aria-pressed={isCurrent}>
+                <span className="page-nav-name">{page.name}</span>
+                {isDone && <CheckCircle2 size={11} className="page-nav-done" />}
+                {pageData?.error && <AlertCircle size={12} className="page-nav-error" />}
+              </button>
+            );
+          })}
         </div>
       )}
 
@@ -105,18 +155,19 @@ export default function RightPanel({
       <div className="preview-frame-container">
         {error ? (
           <ErrorState message={error} />
-        ) : isGenerating ? (
+        ) : showProgressDuringGen ? (
           <ProgressState
             progress={progress}
             current={progressCurrent}
             total={progressTotal}
             plannedPages={plannedPages}
             pages={pages}
+            onPreviewPage={(index) => handleSelectPage(index)}
           />
-        ) : generatedHtml ? (
+        ) : previewHtml ? (
           <div className={`preview-frame ${device}`}
             style={{ transform: `scale(${zoom / 100})`, transformOrigin: 'center center' }}>
-            <iframe title="原型预览" srcDoc={generatedHtml}
+            <iframe title="原型预览" srcDoc={previewHtml}
               sandbox="allow-scripts allow-same-origin" aria-label="HTML原型预览区域" />
           </div>
         ) : (
@@ -125,7 +176,7 @@ export default function RightPanel({
       </div>
 
       {/* Refine panel */}
-      {generatedHtml && refinePanel}
+      {previewHtml && !isGenerating && refinePanel}
     </div>
   );
 }
@@ -146,7 +197,7 @@ function EmptyState() {
   );
 }
 
-function ProgressState({ progress, current, total, plannedPages, pages }) {
+function ProgressState({ progress, current, total, plannedPages, pages, onPreviewPage }) {
   const pct = total > 0 ? Math.round((current / total) * 100) : 0;
 
   // Build a unified list: use plannedPages for names/descriptions, pages for HTML data
@@ -170,29 +221,19 @@ function ProgressState({ progress, current, total, plannedPages, pages }) {
 
   return (
     <div className="progress-state" data-component="Progress State" data-od-id="progress-state">
-      {/* Progress bar */}
-      {total > 0 && (
-        <div className="progress-bar-container">
-          <div className="progress-bar-header">
-            <span className="progress-bar-label">生成进度</span>
-            <span className="progress-bar-count">{current} / {total}</span>
-          </div>
-          <div className="progress-bar-track">
-            <div className="progress-bar-fill" style={{ width: `${pct}%` }} />
-          </div>
-          <p className="progress-bar-text">{progress || '准备中...'}</p>
-        </div>
-      )}
-
       {/* Page preview grid */}
       {pageList.length > 0 && (
         <div className="progress-pages">
-          <p className="progress-pages-label">页面预览</p>
+          <p className="progress-pages-label">页面预览 — 点击已完成的页面查看</p>
           <div className="progress-preview-grid">
             {pageList.map((page, i) => (
               <div
                 key={i}
-                className={`progress-preview-card${page.isDone ? ' done' : ''}${page.isGenerating ? ' generating' : ''}${page.isFailed ? ' failed' : ''}`}
+                className={`progress-preview-card${page.isDone ? ' done clickable' : ''}${page.isGenerating ? ' generating' : ''}${page.isFailed ? ' failed' : ''}`}
+                onClick={() => page.isDone && onPreviewPage && onPreviewPage(i)}
+                role={page.isDone ? 'button' : undefined}
+                tabIndex={page.isDone ? 0 : undefined}
+                aria-label={page.isDone ? `查看页面：${page.name}` : undefined}
               >
                 {/* Thumbnail area */}
                 <div className="progress-preview-thumb">

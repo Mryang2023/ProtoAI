@@ -1,0 +1,481 @@
+/**
+ * AI Service — calls configured AI provider to generate HTML prototypes.
+ * Supports OpenAI, Anthropic Claude, and custom/local models (OpenAI-compatible).
+ * Multi-page planning with shared style spec for visual consistency.
+ */
+
+const STYLE_DESCRIPTIONS = {
+  minimal: '极简风格：大量留白，黑白配色，Helvetica字体，极小圆角，精简克制',
+  business: '商务风格：蓝白配色，系统字体，适中圆角，专业稳重',
+  playful: '活泼风格：暖色调，橙色点缀，圆体字体，大圆角，轻松活泼的语气',
+  tech: '科技风格：深色背景，绿色点缀，等宽字体，代码风格排版',
+  editorial: '文艺风格：米色底，棕色点缀，衬线字体，斜体标题，阅读体验佳',
+};
+
+// Concrete design tokens per style for cross-page consistency
+const STYLE_SPECS = {
+  minimal: {
+    colors: '背景 #ffffff，文字 #111111，次要文字 #888888，强调色 #111111，边框 #eeeeee',
+    typography: "font-family: 'Helvetica Neue', Arial, sans-serif; 标题 font-weight: 600",
+    components: 'border-radius: 2px; box-shadow: none; border: 1px solid #eeeeee',
+    spacing: 'padding: 大量留白 60-80px; gap: 24-40px',
+  },
+  business: {
+    colors: '背景 #fafbfc，表面 #ffffff，文字 #1a1a2e，次要 #666666，主色 #2563eb，边框 #e8ecf0',
+    typography: "font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+    components: 'border-radius: 12-16px; box-shadow: 轻微投影; border: 1px solid #e8ecf0',
+    spacing: 'padding: 32-48px; gap: 16-24px',
+  },
+  playful: {
+    colors: '背景 #fffbeb，表面 #ffffff，文字 #1c1917，次要 #78716c，主色 #f97316，边框 #fed7aa',
+    typography: "font-family: 'Nunito', -apple-system, sans-serif; 标题 font-weight: 700",
+    components: 'border-radius: 20px; 活泼阴影; 按钮圆角 20px',
+    spacing: 'padding: 32-48px; gap: 20-32px',
+  },
+  tech: {
+    colors: '背景 #0f172a，表面 #1e293b，文字 #e2e8f0，次要 #94a3b8，主色 #22c55e，边框 #334155',
+    typography: "font-family: 'SF Mono', 'Fira Code', monospace; 代码感标题",
+    components: 'border-radius: 8px; 顶部 2px 主色线条; 无阴影',
+    spacing: 'padding: 24-40px; gap: 16-24px',
+  },
+  editorial: {
+    colors: '背景 #faf9f6，表面 #ffffff，文字 #1a1a1a，次要 #6b7280，主色 #78350f，边框 #e5e1d8',
+    typography: "font-family: 'Georgia', 'Times New Roman', serif; 标题 italic",
+    components: 'border-radius: 4px; 无阴影; 细边框 1px solid #e5e1d8',
+    spacing: 'padding: 40-60px; gap: 24-32px; 阅读最大宽度 700px',
+  },
+};
+
+/**
+ * Build a unified design spec string from selected styles.
+ * This spec is injected into EVERY page prompt to ensure visual consistency.
+ */
+function buildStyleSpec(selectedStyles, styleDesc) {
+  const primary = selectedStyles[0] || 'business';
+  const spec = STYLE_SPECS[primary] || STYLE_SPECS.business;
+  const labels = selectedStyles.map((s) => STYLE_DESCRIPTIONS[s]).filter(Boolean);
+
+  let result = `【全局设计规范 — 所有页面必须严格遵守】
+配色方案：${spec.colors}
+字体：${spec.typography}
+组件样式：${spec.components}
+间距：${spec.spacing}`;
+
+  if (labels.length > 1) {
+    result += `\n融合风格：${labels.join('；')}`;
+  }
+  if (styleDesc) {
+    result += `\n补充要求：${styleDesc}`;
+  }
+  result += '\n\n重要：所有页面必须使用相同的配色、字体和组件风格，保持视觉统一。';
+  return result;
+}
+
+/**
+ * Read text content from uploaded files (best-effort).
+ */
+export async function readFileContents(files) {
+  const results = [];
+  for (const file of files) {
+    if (file.type?.startsWith('image/')) {
+      results.push({ name: file.name, content: `[图片文件: ${file.name}，类型 ${file.type}]` });
+      continue;
+    }
+    try {
+      const text = await file.text();
+      const maxChars = 15000;
+      const truncated = text.length > maxChars
+        ? text.slice(0, maxChars) + `\n\n... (文件过长，已截断，共 ${text.length} 字符)`
+        : text;
+      results.push({ name: file.name, content: truncated });
+    } catch {
+      results.push({ name: file.name, content: `[无法读取文件内容: ${file.name}]` });
+    }
+  }
+  return results;
+}
+
+// ── AI Provider Calls ──────────────────────────────────
+
+async function callAI(provider, config, systemPrompt, userPrompt) {
+  if (!config?.apiKey) throw new Error('请先在设置中配置 AI 模型的 API Key');
+  if (provider === 'claude') {
+    return callClaude(config.apiKey, config.endpoint, config.model, systemPrompt, userPrompt);
+  }
+  return callOpenAICompatible(config.apiKey, config.endpoint, config.model, systemPrompt, userPrompt);
+}
+
+async function callOpenAICompatible(apiKey, endpoint, model, systemPrompt, userPrompt) {
+  const baseUrl = endpoint || 'https://api.openai.com/v1';
+  const url = `${baseUrl.replace(/\/$/, '')}/chat/completions`;
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+    body: JSON.stringify({
+      model: model || 'gpt-4o',
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt },
+      ],
+      temperature: 0.7,
+      max_tokens: 8000,
+    }),
+  });
+  if (!response.ok) {
+    const errorText = await response.text();
+    let msg = `API 请求失败 (${response.status})`;
+    try { msg = JSON.parse(errorText).error?.message || msg; } catch {}
+    throw new Error(msg);
+  }
+  const data = await response.json();
+  const content = data.choices?.[0]?.message?.content;
+  if (!content) throw new Error('AI 返回了空内容');
+  return content;
+}
+
+async function callClaude(apiKey, endpoint, model, systemPrompt, userPrompt) {
+  const baseUrl = endpoint || 'https://api.anthropic.com/v1';
+  const url = `${baseUrl.replace(/\/$/, '')}/messages`;
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+      'anthropic-dangerous-direct-browser-access': 'true',
+    },
+    body: JSON.stringify({
+      model: model || 'claude-sonnet-4-20250514',
+      max_tokens: 8000,
+      system: systemPrompt,
+      messages: [{ role: 'user', content: userPrompt }],
+    }),
+  });
+  if (!response.ok) {
+    const errorText = await response.text();
+    let msg = `API 请求失败 (${response.status})`;
+    try { msg = JSON.parse(errorText).error?.message || msg; } catch {}
+    throw new Error(msg);
+  }
+  const data = await response.json();
+  const content = data.content?.[0]?.text;
+  if (!content) throw new Error('AI 返回了空内容');
+  return content;
+}
+
+function extractHtml(text) {
+  let html = text.trim();
+  const fenceMatch = html.match(/```(?:html)?\s*\n?([\s\S]*?)\n?```/);
+  if (fenceMatch) html = fenceMatch[1].trim();
+  if (!html.startsWith('<!') && !html.startsWith('<html')) {
+    const start = html.indexOf('<!DOCTYPE');
+    const htmlStart = start !== -1 ? start : html.indexOf('<html');
+    if (htmlStart > 0) html = html.slice(htmlStart);
+  }
+  return html;
+}
+
+// ── Phase 1: Plan ──────────────────────────────────────
+
+/**
+ * Phase 1: Analyze requirements and plan page structure.
+ * Returns { pages: [{name, description, route}], styleSpec: string }
+ */
+export async function planProject(provider, config, contentDesc, fileContents, selectedStyles, styleDesc, onProgress) {
+  if (!config?.apiKey) throw new Error('请先在设置中配置 AI 模型的 API Key');
+  onProgress?.('正在分析需求，规划页面结构...');
+
+  const styleSpec = buildStyleSpec(selectedStyles, styleDesc);
+
+  const systemPrompt = `你是一个专业的产品经理兼前端工程师。用户会给你产品需求描述和上传的文件内容，你需要分析这些需求，将项目拆分成多个页面，并返回页面规划方案。
+
+返回格式要求（严格 JSON 数组）：
+[
+  {
+    "name": "页面名称（中文）",
+    "description": "页面功能简述（1-2句话）",
+    "route": "/page-route"
+  }
+]
+
+规则：
+1. 每个页面应有明确的功能职责
+2. route 使用英文小写 kebab-case 格式，以 / 开头
+3. 如果需求较简单（单一页面），可以只返回 1 个页面
+4. 不要输出任何其他内容，只输出 JSON 数组`;
+
+  const userPrompt = buildContextPrompt(contentDesc, fileContents, selectedStyles, styleDesc)
+    + '\n\n' + styleSpec
+    + '\n\n请分析以上需求，将项目拆分为多个页面。返回严格的 JSON 数组格式，不要输出任何其他内容。';
+
+  const rawResponse = await callAI(provider, config, systemPrompt, userPrompt);
+
+  let pages;
+  try {
+    const jsonMatch = rawResponse.match(/\[[\s\S]*\]/);
+    pages = JSON.parse(jsonMatch ? jsonMatch[0] : rawResponse);
+  } catch {
+    throw new Error('AI 返回的页面规划格式不正确，无法解析为 JSON');
+  }
+  if (!Array.isArray(pages) || pages.length === 0) throw new Error('AI 未能规划出有效的页面结构');
+
+  return {
+    pages: pages.map((p) => ({
+      name: p.name || '未命名页面',
+      description: p.description || '',
+      route: p.route || `/${Math.random().toString(36).slice(2, 8)}`,
+    })),
+    styleSpec,
+  };
+}
+
+// ── Phase 2: Generate ──────────────────────────────────
+
+/**
+ * Phase 2: Generate HTML for each planned page.
+ * Calls onPageGenerated for incremental UI updates.
+ */
+export async function generateProjectPages(provider, config, plannedPages, styleSpec, contentDesc, fileContents, selectedStyles, styleDesc, onProgress, onPageGenerated) {
+  if (!config?.apiKey) throw new Error('请先在设置中配置 AI 模型的 API Key');
+
+  const results = [];
+  for (let i = 0; i < plannedPages.length; i++) {
+    const page = plannedPages[i];
+    onProgress?.(`正在生成第 ${i + 1}/${plannedPages.length} 页「${page.name}」...`);
+    try {
+      const html = await generateSinglePage(provider, config, page, styleSpec, contentDesc, fileContents, selectedStyles, styleDesc);
+      const result = { ...page, html };
+      results.push(result);
+      onPageGenerated?.(result, i, plannedPages.length);
+    } catch (err) {
+      const result = { ...page, html: '', error: err.message };
+      results.push(result);
+      onPageGenerated?.(result, i, plannedPages.length);
+    }
+  }
+  return { pages: results };
+}
+
+async function generateSinglePage(provider, config, page, styleSpec, contentDesc, fileContents, selectedStyles, styleDesc) {
+  const systemPrompt = `你是一个专业的 HTML/CSS 原型生成器。用户会给你单个页面的需求描述和全局设计规范，你需要生成一个完整、可直接运行的单页 HTML 文件。
+
+规则：
+1. 输出必须是完整的 HTML 文件，从 <!DOCTYPE html> 到 </html>
+2. 所有 CSS 写在 <style> 标签内，不要使用外部 CSS 文件
+3. 不要使用外部 JS 库，纯 HTML + CSS 即可
+4. 页面要有良好的视觉效果、合理的排版和配色
+5. 确保页面在不同屏幕尺寸下基本可用
+6. 只输出 HTML 代码，不要输出任何解释性文字
+7. 不要用 markdown 代码块包裹，直接输出 HTML
+8. 必须严格遵守全局设计规范中的配色、字体和组件样式`;
+
+  let userPrompt = '';
+  userPrompt += `## 当前页面信息\n`;
+  userPrompt += `- 页面名称：${page.name}\n`;
+  userPrompt += `- 页面描述：${page.description}\n`;
+  userPrompt += `- 页面路由：${page.route}\n\n`;
+
+  if (fileContents.length > 0) {
+    userPrompt += '## 上传的需求文件内容\n\n';
+    fileContents.forEach(({ name, content }) => {
+      userPrompt += `### 文件: ${name}\n\`\`\`\n${content}\n\`\`\`\n\n`;
+    });
+  }
+
+  if (contentDesc) {
+    userPrompt += `## 整体需求描述\n${contentDesc}\n\n`;
+  }
+
+  userPrompt += styleSpec + '\n\n';
+  userPrompt += `请根据以上信息，为「${page.name}」页面生成完整的单页 HTML 原型。`;
+  userPrompt += '该页面应严格遵循规划中的功能描述和全局设计规范。';
+  userPrompt += '只输出 HTML 代码，不要输出任何解释性文字。';
+
+  const rawResponse = await callAI(provider, config, systemPrompt, userPrompt);
+  return extractHtml(rawResponse);
+}
+
+// ── Prompt helpers ──────────────────────────────────────
+
+function buildContextPrompt(contentDesc, fileContents, selectedStyles, styleDesc) {
+  let prompt = '';
+  if (fileContents.length > 0) {
+    prompt += '## 上传的需求文件内容\n\n';
+    fileContents.forEach(({ name, content }) => {
+      prompt += `### 文件: ${name}\n\`\`\`\n${content}\n\`\`\`\n\n`;
+    });
+  }
+  if (contentDesc) prompt += `## 页面需求描述\n${contentDesc}\n\n`;
+  const styleLabels = selectedStyles.map((s) => STYLE_DESCRIPTIONS[s]).filter(Boolean);
+  if (styleLabels.length > 0 || styleDesc) {
+    prompt += '## 风格偏好\n';
+    if (styleLabels.length > 0) prompt += styleLabels.map((s) => `- ${s}`).join('\n') + '\n';
+    if (styleDesc) prompt += `补充说明：${styleDesc}\n`;
+    prompt += '\n';
+  }
+  return prompt;
+}
+
+// ── Image Export Utility ───────────────────────────────
+
+/**
+ * Convert an HTML string to a PNG image blob using SVG foreignObject.
+ * Returns a Blob of the PNG image.
+ */
+export async function htmlToImage(htmlString, width = 1440, height = 900) {
+  return new Promise((resolve, reject) => {
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">
+      <foreignObject width="100%" height="100%">
+        <div xmlns="http://www.w3.org/1999/xhtml" style="width:${width}px;height:${height}px;overflow:hidden;">
+          <iframe id="__capture" style="width:${width}px;height:${height}px;border:none;" sandbox="allow-same-origin"></iframe>
+        </div>
+      </foreignObject>
+    </svg>`;
+
+    // Use iframe approach for reliable rendering
+    const iframe = document.createElement('iframe');
+    iframe.style.cssText = `position:fixed;left:-${width + 100}px;top:0;width:${width}px;height:${height}px;border:none;visibility:hidden;`;
+    iframe.sandbox = 'allow-same-origin';
+    document.body.appendChild(iframe);
+
+    iframe.srcdoc = htmlString;
+    iframe.onload = () => {
+      setTimeout(() => {
+        try {
+          const canvas = document.createElement('canvas');
+          const scale = 2;
+          canvas.width = width * scale;
+          canvas.height = height * scale;
+          const ctx = canvas.getContext('2d');
+          ctx.scale(scale, scale);
+
+          const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
+          if (!iframeDoc) {
+            document.body.removeChild(iframe);
+            reject(new Error('无法访问 iframe 内容进行截图'));
+            return;
+          }
+
+          // Use the built-in drawImage with the iframe's document
+          const body = iframeDoc.body;
+          const svgData = `
+            <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">
+              <foreignObject width="100%" height="100%">
+                <div xmlns="http://www.w3.org/1999/xhtml">${body.innerHTML}</div>
+              </foreignObject>
+            </svg>`;
+
+          const img = new Image();
+          const svgBlob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' });
+          const url = URL.createObjectURL(svgBlob);
+
+          img.onload = () => {
+            ctx.drawImage(img, 0, 0, width, height);
+            URL.revokeObjectURL(url);
+            document.body.removeChild(iframe);
+            canvas.toBlob((blob) => {
+              if (blob) resolve(blob);
+              else reject(new Error('图片生成失败'));
+            }, 'image/png');
+          };
+
+          img.onerror = () => {
+            URL.revokeObjectURL(url);
+            document.body.removeChild(iframe);
+            // Fallback: just return the HTML as-is
+            reject(new Error('SVG 渲染失败，请尝试使用 HTML 导出'));
+          };
+
+          img.src = url;
+        } catch (err) {
+          document.body.removeChild(iframe);
+          reject(err);
+        }
+      }, 500); // Wait for rendering
+    };
+  });
+}
+
+/**
+ * Capture a page by rendering its HTML in a hidden iframe and using canvas.
+ * More reliable cross-browser approach.
+ */
+export async function capturePageAsImage(htmlString, width = 1440, height = 900) {
+  return new Promise((resolve, reject) => {
+    const iframe = document.createElement('iframe');
+    iframe.style.cssText = `position:fixed;left:-9999px;top:0;width:${width}px;height:${height}px;border:none;`;
+    iframe.sandbox = 'allow-same-origin';
+    document.body.appendChild(iframe);
+
+    iframe.srcdoc = htmlString;
+
+    const timeout = setTimeout(() => {
+      cleanup();
+      reject(new Error('截图超时'));
+    }, 15000);
+
+    const cleanup = () => {
+      clearTimeout(timeout);
+      if (iframe.parentNode) document.body.removeChild(iframe);
+    };
+
+    iframe.onload = () => {
+      // Give extra time for fonts and images to load
+      setTimeout(() => {
+        try {
+          const canvas = document.createElement('canvas');
+          const scale = 2;
+          canvas.width = width * scale;
+          canvas.height = height * scale;
+          const ctx = canvas.getContext('2d');
+          ctx.scale(scale, scale);
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(0, 0, width, height);
+
+          // Serialize the iframe content to SVG foreignObject
+          const doc = iframe.contentDocument;
+          if (!doc) {
+            cleanup();
+            reject(new Error('无法访问页面内容'));
+            return;
+          }
+
+          const serializer = new XMLSerializer();
+          const htmlClone = doc.documentElement.cloneNode(true);
+          const htmlStr = serializer.serializeToString(htmlClone);
+
+          const svgStr = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">
+            <foreignObject width="100%" height="100%">
+              ${htmlStr}
+            </foreignObject>
+          </svg>`;
+
+          const blob = new Blob([svgStr], { type: 'image/svg+xml;charset=utf-8' });
+          const url = URL.createObjectURL(blob);
+          const img = new Image();
+
+          img.onload = () => {
+            ctx.drawImage(img, 0, 0, width, height);
+            URL.revokeObjectURL(url);
+            cleanup();
+            canvas.toBlob((b) => {
+              if (b) resolve(b);
+              else reject(new Error('Canvas 导出失败'));
+            }, 'image/png');
+          };
+
+          img.onerror = () => {
+            URL.revokeObjectURL(url);
+            cleanup();
+            reject(new Error('图片渲染失败'));
+          };
+
+          img.src = url;
+        } catch (err) {
+          cleanup();
+          reject(err);
+        }
+      }, 800);
+    };
+  });
+}

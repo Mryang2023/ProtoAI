@@ -50,7 +50,7 @@ const STYLE_SPECS = {
  * Build a unified design spec string from selected styles.
  * This spec is injected into EVERY page prompt to ensure visual consistency.
  */
-function buildStyleSpec(selectedStyles, styleDesc) {
+export function buildStyleSpec(selectedStyles, styleDesc) {
   const primary = selectedStyles[0] || 'business';
   const spec = STYLE_SPECS[primary] || STYLE_SPECS.business;
   const labels = selectedStyles.map((s) => STYLE_DESCRIPTIONS[s]).filter(Boolean);
@@ -229,6 +229,38 @@ export async function planProject(provider, config, contentDesc, fileContents, s
   };
 }
 
+// ── Navigation Injection ──────────────────────────────
+
+/**
+ * Inject a unified navigation bar into each page's HTML so pages link to each other.
+ * Only runs for multi-page projects.
+ */
+function injectNavigation(pages) {
+  if (pages.length <= 1) return pages;
+
+  const links = pages.map((p, i) => {
+    const fn = `${String(i + 1).padStart(2, '0')}_${p.name.replace(/[^a-zA-Z0-9\u4e00-\u9fa5]/g, '_')}.html`;
+    return `<a href="${fn}" style="text-decoration:none;color:inherit;padding:6px 14px;border-radius:6px;font-size:14px;font-weight:500;transition:all .15s;">${p.name}</a>`;
+  }).join('\n        ');
+
+  const navHtml = `
+  <nav style="display:flex;align-items:center;gap:4px;padding:12px 24px;background:#fff;border-bottom:1px solid #e5e7eb;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;position:sticky;top:0;z-index:100;">
+    <span style="font-weight:700;font-size:15px;margin-right:16px;color:#111;">ProtoAI</span>
+    ${links}
+  </nav>`;
+
+  return pages.map((p) => {
+    if (!p.html) return p;
+    let html = p.html;
+    if (html.includes('</body>')) {
+      html = html.replace('</body>', `${navHtml}\n</body>`);
+    } else {
+      html += navHtml;
+    }
+    return { ...p, html };
+  });
+}
+
 // ── Phase 2: Generate ──────────────────────────────────
 
 /**
@@ -243,7 +275,7 @@ export async function generateProjectPages(provider, config, plannedPages, style
     const page = plannedPages[i];
     onProgress?.(`正在生成第 ${i + 1}/${plannedPages.length} 页「${page.name}」...`);
     try {
-      const html = await generateSinglePage(provider, config, page, styleSpec, contentDesc, fileContents, selectedStyles, styleDesc);
+      const html = await generateSinglePage(provider, config, page, styleSpec, contentDesc, fileContents, selectedStyles, styleDesc, plannedPages);
       const result = { ...page, html };
       results.push(result);
       onPageGenerated?.(result, i, plannedPages.length);
@@ -253,10 +285,14 @@ export async function generateProjectPages(provider, config, plannedPages, style
       onPageGenerated?.(result, i, plannedPages.length);
     }
   }
-  return { pages: results };
+
+  // Inject cross-page navigation for multi-page projects
+  const finalPages = injectNavigation(results);
+
+  return { pages: finalPages };
 }
 
-async function generateSinglePage(provider, config, page, styleSpec, contentDesc, fileContents, selectedStyles, styleDesc) {
+async function generateSinglePage(provider, config, page, styleSpec, contentDesc, fileContents, selectedStyles, styleDesc, allPages) {
   const systemPrompt = `你是一个专业的 HTML/CSS 原型生成器。用户会给你单个页面的需求描述和全局设计规范，你需要生成一个完整、可直接运行的单页 HTML 文件。
 
 规则：
@@ -267,13 +303,23 @@ async function generateSinglePage(provider, config, page, styleSpec, contentDesc
 5. 确保页面在不同屏幕尺寸下基本可用
 6. 只输出 HTML 代码，不要输出任何解释性文字
 7. 不要用 markdown 代码块包裹，直接输出 HTML
-8. 必须严格遵守全局设计规范中的配色、字体和组件样式`;
+8. 必须严格遵守全局设计规范中的配色、字体和组件样式
+9. 如果页面内容区域的顶部需要放置导航，使用简洁的文字链接风格`;
 
   let userPrompt = '';
   userPrompt += `## 当前页面信息\n`;
   userPrompt += `- 页面名称：${page.name}\n`;
   userPrompt += `- 页面描述：${page.description}\n`;
   userPrompt += `- 页面路由：${page.route}\n\n`;
+
+  if (allPages && allPages.length > 1) {
+    userPrompt += `## 完整页面列表（共 ${allPages.length} 页）\n`;
+    allPages.forEach((p, i) => {
+      const marker = p.route === page.route ? ' ← 当前页面' : '';
+      userPrompt += `${i + 1}. ${p.name}（${p.route}）${marker}\n`;
+    });
+    userPrompt += `请在页面内容区域上方放置一个简洁的导航栏，包含所有页面名称作为文字链接，当前页面高亮显示，其他页面使用普通样式。导航应与页面整体设计风格一致。\n\n`;
+  }
 
   if (fileContents.length > 0) {
     userPrompt += '## 上传的需求文件内容\n\n';
@@ -293,6 +339,37 @@ async function generateSinglePage(provider, config, page, styleSpec, contentDesc
 
   const rawResponse = await callAI(provider, config, systemPrompt, userPrompt);
   return extractHtml(rawResponse);
+}
+
+// ── Chat Refinement ────────────────────────────────────
+
+/**
+ * Send current HTML + user instruction to AI and return modified HTML.
+ */
+export async function refinePage(provider, config, currentHtml, userInstruction) {
+  if (!config?.apiKey) throw new Error('请先在设置中配置 AI 模型的 API Key');
+
+  const systemPrompt = `你是一个专业的 HTML/CSS 前端工程师。用户会给你当前页面的 HTML 代码和一条修改指令。请按照指令修改 HTML 并返回完整的修改后 HTML。
+
+规则：
+1. 返回完整的 HTML 文件（从 <!DOCTYPE> 到 </html>）
+2. 只修改用户要求的部分，保持其他内容不变
+3. 只输出 HTML 代码，不要输出任何解释性文字
+4. 不要用 markdown 代码块包裹，直接输出 HTML`;
+
+  const userPrompt = `## 当前页面 HTML\n\n\`\`\`html\n${currentHtml.slice(0, 12000)}\n\`\`\`\n\n## 修改指令\n\n${userInstruction}\n\n请按照修改指令调整 HTML，返回完整的修改后 HTML 代码。`;
+
+  const rawResponse = await callAI(provider, config, systemPrompt, userPrompt);
+  return extractHtml(rawResponse);
+}
+
+// ── Single Page Regeneration ────────────────────────────
+
+/**
+ * Regenerate a single page. Wrapper around the internal generateSinglePage.
+ */
+export async function regenerateSinglePage(provider, config, page, styleSpec, contentDesc, fileContents, selectedStyles, styleDesc, allPages) {
+  return generateSinglePage(provider, config, page, styleSpec, contentDesc, fileContents, selectedStyles, styleDesc, allPages);
 }
 
 // ── Prompt helpers ──────────────────────────────────────

@@ -6,7 +6,7 @@ import RightPanel from './components/RightPanel.jsx';
 import RefinePanel from './components/RefinePanel.jsx';
 import AISettingsModal from './components/AISettingsModal.jsx';
 import VersionHistory from './components/VersionHistory.jsx';
-import { planProject, generateProjectPages, readFileContents, capturePageAsImage } from './aiService.js';
+import { planProject, generateProjectPages, readFileContents, capturePageAsImage, refinePage, regenerateSinglePage, buildStyleSpec } from './aiService.js';
 
 const PROVIDER_NAMES = { openai: 'OpenAI', claude: 'Claude', custom: '本地模型' };
 
@@ -59,6 +59,8 @@ export default function App() {
   // Refine state
   const [code, setCode] = useState('');
   const [messages, setMessages] = useState([]);
+  const [isRefining, setIsRefining] = useState(false);
+  const [isRegenerating, setIsRegenerating] = useState(false);
 
   // AI settings
   const [showSettings, setShowSettings] = useState(false);
@@ -203,15 +205,66 @@ export default function App() {
     });
   }, [currentPageIndex]);
 
-  const handleSendMessage = useCallback((text) => {
+  const handleSendMessage = useCallback(async (text) => {
+    if (isRefining || !generatedHtml) return;
     setMessages((prev) => [...prev, { role: 'user', content: text }]);
-    setTimeout(() => {
+    setIsRefining(true);
+
+    try {
+      const providerConfig = aiConfig[activeProvider] || {};
+      const refinedHtml = await refinePage(activeProvider, providerConfig, generatedHtml, text);
+      // Update the current page's HTML
+      setPages((prev) => {
+        const next = [...prev];
+        if (next[currentPageIndex]) {
+          next[currentPageIndex] = { ...next[currentPageIndex], html: refinedHtml };
+        }
+        return next;
+      });
+      setCode(refinedHtml);
       setMessages((prev) => [...prev, {
         role: 'ai',
         content: `已根据你的指令「${text}」调整了原型。你可以在右侧预览查看变化，或继续提出修改意见。`,
       }]);
-    }, 800);
-  }, []);
+    } catch (err) {
+      setMessages((prev) => [...prev, {
+        role: 'ai',
+        content: `修改失败：${err.message}。请检查 AI 模型配置后重试。`,
+      }]);
+    } finally {
+      setIsRefining(false);
+    }
+  }, [isRefining, generatedHtml, aiConfig, activeProvider, currentPageIndex]);
+
+  // ── Single Page Regeneration ──
+
+  const handleRegeneratePage = useCallback(async () => {
+    if (isRegenerating || !pages[currentPageIndex]) return;
+    const page = pages[currentPageIndex];
+    setIsRegenerating(true);
+    setGenerateProgress(`正在重新生成「${page.name}」...`);
+
+    try {
+      const providerConfig = aiConfig[activeProvider] || {};
+      const fileContents = uploadedFiles.length > 0 ? await readFileContents(uploadedFiles) : [];
+      const styleSpec = plannedStyleSpec || buildStyleSpec(selectedStyles, styleDesc);
+      const html = await regenerateSinglePage(
+        activeProvider, providerConfig, page, styleSpec,
+        contentDesc, fileContents, selectedStyles, styleDesc, pages
+      );
+      setPages((prev) => {
+        const next = [...prev];
+        next[currentPageIndex] = { ...next[currentPageIndex], html, error: null };
+        return next;
+      });
+      setCode(html);
+    } catch (err) {
+      setGenerateError(`重新生成失败：${err.message}`);
+    } finally {
+      setIsRegenerating(false);
+      setGenerateProgress('');
+    }
+  }, [isRegenerating, pages, currentPageIndex, aiConfig, activeProvider, contentDesc, selectedStyles, styleDesc, plannedStyleSpec, uploadedFiles]);
 
   // ── Export: Current Page HTML ──
 
@@ -442,6 +495,9 @@ export default function App() {
             if (isGenerating) setUserSelectedPage(true);
           }}
           onUserSelectPage={() => setUserSelectedPage(true)}
+          isRefining={isRefining}
+          isRegenerating={isRegenerating}
+          onRegeneratePage={handleRegeneratePage}
           refinePanel={
             <RefinePanel
               code={code}

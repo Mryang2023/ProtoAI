@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import {
   Monitor, Tablet, Smartphone, RefreshCw, ZoomIn, ZoomOut,
   Download, FileDown, Archive, Image, Images,
-  Sparkles, AlertCircle, ChevronDown, CheckCircle2, ArrowLeft,
+  Sparkles, AlertCircle, ChevronDown, CheckCircle2, ArrowLeft, RotateCcw,
 } from 'lucide-react';
 
 export default function RightPanel({
@@ -11,6 +11,7 @@ export default function RightPanel({
   refinePanel, error, progress, progressCurrent, progressTotal,
   plannedPages, pages, currentPageIndex, onPageChange,
   onUserSelectPage,
+  isRefining, isRegenerating, onRegeneratePage,
 }) {
   const [device, setDevice] = useState('desktop');
   const [zoom, setZoom] = useState(100);
@@ -95,6 +96,11 @@ export default function RightPanel({
             <span className="zoom-display">{zoom}%</span>
             <button className="btn btn-icon btn-sm" onClick={() => setZoom((z) => Math.min(z + 10, 150))} disabled={zoom >= 150} title="放大" aria-label="放大"><ZoomIn size={14} /></button>
             <button className="btn btn-icon btn-sm" onClick={onRefresh} title="刷新预览" aria-label="刷新预览"><RefreshCw size={14} /></button>
+            {!isGenerating && (
+              <button className="btn btn-icon btn-sm" onClick={onRegeneratePage} disabled={isRegenerating} title="重新生成此页面" aria-label="重新生成此页面">
+                <RotateCcw size={14} />
+              </button>
+            )}
             <div className="toolbar-divider" />
             <div className="export-btn-group" ref={exportRef}>
               <button className="btn btn-icon btn-sm export-toolbar-btn" onClick={() => setShowExportMenu((v) => !v)} title="导出原型" aria-label="导出原型" aria-expanded={showExportMenu}>
@@ -148,6 +154,17 @@ export default function RightPanel({
               </button>
             );
           })}
+          {/* Regenerate current page button */}
+          {!isGenerating && generatedHtml && (
+            <button className="page-nav-regenerate"
+              onClick={onRegeneratePage}
+              disabled={isRegenerating}
+              title="重新生成此页面"
+              aria-label="重新生成当前页面">
+              <RotateCcw size={12} />
+              {isRegenerating ? '生成中...' : '重新生成'}
+            </button>
+          )}
         </div>
       )}
 

@@ -61,6 +61,7 @@ class ErrorBoundary extends ReactComponent {
 }
 
 const STORAGE_KEY = 'protoai_saved_state';
+const PLANS_STORAGE_KEY = 'protoai_saved_plans';
 
 export default function App() {
   // Restore state from localStorage on mount (lazy init — must be first)
@@ -145,6 +146,14 @@ export default function App() {
   const [history, setHistory] = useState([]);
   const [currentHistoryId, setCurrentHistoryId] = useState(null);
 
+  // Saved plans — persist across sessions for quick re-execution
+  const [savedPlans, setSavedPlans] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem(PLANS_STORAGE_KEY) || '[]');
+    } catch (e) { return []; }
+  });
+  const [loadedPlanId, setLoadedPlanId] = useState(null);
+
   // ── Refs sync ──
   isGeneratingRef.current = isGenerating;
 
@@ -204,12 +213,29 @@ export default function App() {
       setPlannedStyleSpec(plan.styleSpec);
       setGenerateProgress('');
       setIsGenerating(false);
+
+      // Auto-save plan to history
+      const planEntry = {
+        id: Date.now().toString(),
+        timestamp: formatTime(new Date()),
+        description: contentDesc || '文件导入生成',
+        selectedStyles: [...selectedStyles],
+        styleDesc,
+        plannedPages: plan.pages,
+        styleSpec: plan.styleSpec,
+      };
+      setSavedPlans((prev) => {
+        const updated = [planEntry, ...prev.filter((p) => p.id !== loadedPlanId)];
+        try { localStorage.setItem(PLANS_STORAGE_KEY, JSON.stringify(updated)); } catch (e) { /* ignore */ }
+        return updated;
+      });
+      setLoadedPlanId(planEntry.id);
     } catch (err) {
       setGenerateError(err.message || '规划失败');
       setIsGenerating(false);
       setGenerateProgress('');
     }
-  }, [contentDesc, selectedStyles, styleDesc, uploadedFiles, aiConfig, activeProvider]);
+  }, [contentDesc, selectedStyles, styleDesc, uploadedFiles, aiConfig, activeProvider, loadedPlanId]);
 
   // ── Phase 2: Generate (after plan confirmation) ──
 
@@ -286,7 +312,33 @@ export default function App() {
   const handleCancelPlan = useCallback(() => {
     setPlannedPages(null);
     setPlannedStyleSpec('');
+    setLoadedPlanId(null);
   }, []);
+
+  // ── Saved Plans ──
+
+  const handleLoadPlan = useCallback((plan) => {
+    setContentDesc(plan.description || '');
+    setSelectedStyles(plan.selectedStyles || ['business']);
+    setStyleDesc(plan.styleDesc || '');
+    setPlannedPages(plan.plannedPages);
+    setPlannedStyleSpec(plan.styleSpec || '');
+    setLoadedPlanId(plan.id);
+    setGenerateError('');
+  }, []);
+
+  const handleDeletePlan = useCallback((planId) => {
+    setSavedPlans((prev) => {
+      const updated = prev.filter((p) => p.id !== planId);
+      try { localStorage.setItem(PLANS_STORAGE_KEY, JSON.stringify(updated)); } catch (e) { /* ignore */ }
+      return updated;
+    });
+    if (loadedPlanId === planId) {
+      setPlannedPages(null);
+      setPlannedStyleSpec('');
+      setLoadedPlanId(null);
+    }
+  }, [loadedPlanId]);
 
   // ── Code & Chat ──
 
@@ -566,6 +618,10 @@ export default function App() {
           files={uploadedFiles}
           onFilesAdd={handleFilesAdd}
           onFileRemove={handleFileRemove}
+          savedPlans={savedPlans}
+          loadedPlanId={loadedPlanId}
+          onLoadPlan={handleLoadPlan}
+          onDeletePlan={handleDeletePlan}
         />
 
         <RightPanel

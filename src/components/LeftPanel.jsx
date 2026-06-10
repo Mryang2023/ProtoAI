@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback } from 'react';
-import { Sparkles, FileText, Palette, Bot, Check, X, LayoutList } from 'lucide-react';
+import { Sparkles, FileText, Palette, Bot, Check, X, LayoutList, History, Trash2, Play } from 'lucide-react';
 import StyleTags from './StyleTags.jsx';
 import FileUpload from './FileUpload.jsx';
 
@@ -22,8 +22,13 @@ export default function LeftPanel({
   files,
   onFilesAdd,
   onFileRemove,
+  savedPlans = [],
+  loadedPlanId,
+  onLoadPlan,
+  onDeletePlan,
 }) {
   const [panelWidth, setPanelWidth] = useState(400);
+  const [showSavedPlans, setShowSavedPlans] = useState(false);
   const isResizing = useRef(false);
 
   const handleMouseDown = useCallback((e) => {
@@ -138,6 +143,64 @@ export default function LeftPanel({
                 <button className="btn btn-ghost btn-sm" onClick={onCancelPlan}>
                   <X size={14} />取消
                 </button>
+              </div>
+            )}
+          </section>
+        )}
+
+        {/* Saved plans history */}
+        {savedPlans.length > 0 && !isGenerating && (
+          <section className="saved-plans-section" data-component="Saved Plans">
+            <div
+              className="panel-section-header"
+              style={{ cursor: 'pointer', userSelect: 'none' }}
+              onClick={() => setShowSavedPlans((v) => !v)}
+            >
+              <History size={14} style={{ color: 'var(--fg-muted)' }} />
+              <span className="section-label">历史方案 ({savedPlans.length})</span>
+              <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--fg-muted)' }}>
+                {showSavedPlans ? '收起' : '展开'}
+              </span>
+            </div>
+
+            {showSavedPlans && (
+              <div className="saved-plans-list">
+                {savedPlans.map((plan) => {
+                  const isLoaded = loadedPlanId === plan.id;
+                  return (
+                    <div key={plan.id} className={`saved-plan-item${isLoaded ? ' loaded' : ''}`}>
+                      <div className="saved-plan-info">
+                        <span className="saved-plan-desc" title={plan.description}>
+                          {plan.description.length > 30
+                            ? plan.description.slice(0, 30) + '...'
+                            : plan.description}
+                        </span>
+                        <span className="saved-plan-meta">
+                          {plan.plannedPages?.length || 0} 页 · {plan.timestamp}
+                        </span>
+                      </div>
+                      <div className="saved-plan-actions">
+                        <button
+                          className="btn btn-icon btn-sm saved-plan-btn"
+                          onClick={() => onLoadPlan(plan)}
+                          disabled={isLoaded}
+                          title={isLoaded ? '当前方案' : '加载此方案'}
+                          aria-label={`加载方案：${plan.description}`}
+                        >
+                          {isLoaded ? <Check size={13} /> : <Play size={13} />}
+                        </button>
+                        <button
+                          className="btn btn-icon btn-sm saved-plan-btn delete"
+                          onClick={() => onDeletePlan(plan.id)}
+                          title="删除此方案"
+                          aria-label={`删除方案：${plan.description}`}
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             )}
           </section>

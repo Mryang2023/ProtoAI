@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback } from 'react';
-import { Sparkles, FileText, Palette, Bot, Check, X, LayoutList, History, Trash2, Play } from 'lucide-react';
+import { Sparkles, FileText, Palette, Bot, Check, X, LayoutList, History, Trash2, Play, Monitor, Smartphone, ChevronDown, Plus } from 'lucide-react';
 import StyleTags from './StyleTags.jsx';
 import FileUpload from './FileUpload.jsx';
 
@@ -16,6 +16,7 @@ export default function LeftPanel({
   isGenerating,
   isPlanning,
   plannedPages,
+  detectedPlatform,
   pages,
   activeModel,
   onOpenSettings,
@@ -29,6 +30,7 @@ export default function LeftPanel({
 }) {
   const [panelWidth, setPanelWidth] = useState(400);
   const [showSavedPlans, setShowSavedPlans] = useState(false);
+  const [stylesExpanded, setStylesExpanded] = useState(false);
   const isResizing = useRef(false);
 
   const handleMouseDown = useCallback((e) => {
@@ -82,23 +84,49 @@ export default function LeftPanel({
 
         {/* Style preferences */}
         <section className="panel-section">
-          <div className="panel-section-header">
+          <div
+            className="panel-section-header"
+            style={{ cursor: 'pointer', userSelect: 'none' }}
+            onClick={() => setStylesExpanded((v) => !v)}
+          >
             <Palette size={14} style={{ color: 'var(--fg-muted)' }} />
             <span className="section-label">风格偏好</span>
+            <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--fg-muted)', display: 'flex', alignItems: 'center', gap: 2 }}>
+              {selectedStyles.length > 0 && (
+                <span style={{
+                  background: 'var(--accent-subtle)', color: 'var(--accent)',
+                  padding: '1px 6px', borderRadius: 9999, fontWeight: 600,
+                }}>{selectedStyles.length}</span>
+              )}
+              <ChevronDown size={14} style={{
+                transform: stylesExpanded ? 'rotate(180deg)' : 'rotate(0deg)',
+                transition: 'transform .2s',
+              }} />
+            </span>
           </div>
-          <p className="section-hint">选择一种或多种风格标签，可叠加使用</p>
-          <StyleTags selected={selectedStyles} onToggle={onToggleStyle} />
-          <div className="textarea-field" style={{ marginTop: 'var(--sp-2)' }}>
-            <textarea
-              value={styleDesc}
-              onChange={(e) => onStyleDescChange(e.target.value)}
-              placeholder="补充风格描述（可选）：例如使用深色背景、圆角卡片、渐变按钮..."
-              maxLength={500}
-              style={{ minHeight: 80 }}
-              aria-label="风格补充描述"
-            />
-            <span className="char-count">{styleDesc.length}/500</span>
-          </div>
+          {!stylesExpanded ? (
+            <p className="section-hint">
+              {selectedStyles.length > 0
+                ? `已选：${selectedStyles.join('、')}，点击展开修改`
+                : '点击展开选择风格标签'}
+            </p>
+          ) : (
+            <>
+              <p className="section-hint">选择一种或多种风格标签，可叠加使用</p>
+              <StyleTags selected={selectedStyles} onToggle={onToggleStyle} />
+              <div className="textarea-field" style={{ marginTop: 'var(--sp-2)' }}>
+                <textarea
+                  value={styleDesc}
+                  onChange={(e) => onStyleDescChange(e.target.value)}
+                  placeholder="补充风格描述（可选）：例如使用深色背景、圆角卡片、渐变按钮..."
+                  maxLength={500}
+                  style={{ minHeight: 80 }}
+                  aria-label="风格补充描述"
+                />
+                <span className="char-count">{styleDesc.length}/500</span>
+              </div>
+            </>
+          )}
         </section>
 
         {/* Plan preview */}
@@ -108,6 +136,21 @@ export default function LeftPanel({
               <LayoutList size={14} style={{ color: isGenerating ? 'var(--fg-muted)' : 'var(--accent)' }} />
               <span className="section-label" style={{ color: isGenerating ? 'var(--fg-muted)' : 'var(--accent)' }}>
                 {isGenerating ? '生成进度' : '生成方案'}
+              </span>
+              <span style={{
+                marginLeft: 'auto',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '4px',
+                fontSize: '11px',
+                fontWeight: 600,
+                padding: '2px 8px',
+                borderRadius: '9999px',
+                background: detectedPlatform === 'mobile' ? 'rgba(249,115,22,0.1)' : 'rgba(37,99,235,0.1)',
+                color: detectedPlatform === 'mobile' ? '#ea580c' : '#2563eb',
+              }}>
+                {detectedPlatform === 'mobile' ? <Smartphone size={12} /> : <Monitor size={12} />}
+                {detectedPlatform === 'mobile' ? '移动端' : 'PC端'}
               </span>
             </div>
             {!isGenerating && (

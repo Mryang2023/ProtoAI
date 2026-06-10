@@ -9,11 +9,18 @@ import {
   Moon,
   Sun,
   ChevronDown,
+  Plus,
+  FolderOpen,
+  Check,
 } from 'lucide-react';
 
 export default function TopBar({
   projectName,
   onProjectNameChange,
+  projects,
+  activeProjectId,
+  onSwitchProject,
+  onCreateProject,
   onOpenSettings,
   onOpenHistory,
   onExport,
@@ -23,29 +30,35 @@ export default function TopBar({
   onToggleTheme,
 }) {
   const [showExportMenu, setShowExportMenu] = useState(false);
+  const [showProjectMenu, setShowProjectMenu] = useState(false);
   const exportRef = useRef(null);
+  const projectRef = useRef(null);
 
-  // Close dropdown on outside click
+  // Close dropdowns on outside click
   useEffect(() => {
-    if (!showExportMenu) return;
+    if (!showExportMenu && !showProjectMenu) return;
     const handler = (e) => {
-      if (exportRef.current && !exportRef.current.contains(e.target)) {
-        setShowExportMenu(false);
-      }
+      if (exportRef.current && !exportRef.current.contains(e.target)) setShowExportMenu(false);
+      if (projectRef.current && !projectRef.current.contains(e.target)) setShowProjectMenu(false);
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
-  }, [showExportMenu]);
+  }, [showExportMenu, showProjectMenu]);
 
-  const handleExportCurrent = () => {
-    onExport();
-    setShowExportMenu(false);
+  const handleExportCurrent = () => { onExport(); setShowExportMenu(false); };
+  const handleExportAll = () => { onExportAll(); setShowExportMenu(false); };
+
+  const handleSwitchProject = (id) => {
+    onSwitchProject(id);
+    setShowProjectMenu(false);
   };
 
-  const handleExportAll = () => {
-    onExportAll();
-    setShowExportMenu(false);
+  const handleCreateProject = () => {
+    onCreateProject();
+    setShowProjectMenu(false);
   };
+
+  const projectList = projects ? Object.values(projects) : [];
 
   return (
     <header className="topbar" data-component="Top Bar" data-od-id="topbar">
@@ -57,14 +70,57 @@ export default function TopBar({
           <span className="topbar-logo-text">ProtoAI</span>
         </div>
         <div className="topbar-divider" />
-        <input
-          className="topbar-project"
-          value={projectName}
-          onChange={(e) => onProjectNameChange(e.target.value)}
-          placeholder="未命名项目"
-          aria-label="项目名称"
-        />
+
+        {/* Project switcher */}
+        <div ref={projectRef} style={{ position: 'relative' }}>
+          <button
+            className="topbar-project-switcher"
+            onClick={() => setShowProjectMenu((v) => !v)}
+            aria-label="切换项目"
+            aria-expanded={showProjectMenu}
+          >
+            <FolderOpen size={14} style={{ flexShrink: 0, color: 'var(--fg-muted)' }} />
+            <span className="topbar-project-name">{projectName || '未命名项目'}</span>
+            <ChevronDown size={12} style={{
+              flexShrink: 0,
+              color: 'var(--fg-muted)',
+              transform: showProjectMenu ? 'rotate(180deg)' : 'rotate(0deg)',
+              transition: 'transform .15s',
+            }} />
+          </button>
+
+          {showProjectMenu && (
+            <div className="project-dropdown">
+              {projectList.length > 0 && (
+                <div className="project-dropdown-section">
+                  <span className="project-dropdown-label">我的项目</span>
+                  {projectList.map((p) => (
+                    <button
+                      key={p.id}
+                      className={`project-dropdown-item${p.id === activeProjectId ? ' active' : ''}`}
+                      onClick={() => handleSwitchProject(p.id)}
+                    >
+                      <FolderOpen size={14} />
+                      <span className="project-dropdown-item-name">{p.name || '未命名项目'}</span>
+                      <span className="project-dropdown-item-meta">
+                        {p.history?.length || 0} 次生成
+                      </span>
+                      {p.id === activeProjectId && <Check size={14} style={{ color: 'var(--accent)', flexShrink: 0 }} />}
+                    </button>
+                  ))}
+                </div>
+              )}
+              <div className="project-dropdown-section">
+                <button className="project-dropdown-item new-project" onClick={handleCreateProject}>
+                  <Plus size={14} />
+                  <span>新建项目</span>
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
+
       <div className="topbar-right">
         <button
           className="btn btn-icon"

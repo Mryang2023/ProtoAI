@@ -60,56 +60,142 @@ class ErrorBoundary extends ReactComponent {
   }
 }
 
-const STORAGE_KEY = 'protoai_saved_state';
-const PLANS_STORAGE_KEY = 'protoai_saved_plans';
+const PROJECTS_KEY = 'protoai_projects';
+const ACTIVE_PROJECT_KEY = 'protoai_active_project';
+const LEGACY_STATE_KEY = 'protoai_saved_state';
+const LEGACY_PLANS_KEY = 'protoai_saved_plans';
+
+const generateId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+
+const createEmptyProject = (name = '未命名项目') => ({
+  id: generateId(),
+  name,
+  contentDesc: '',
+  styleDesc: '',
+  selectedStyles: ['business'],
+  pages: [],
+  history: [],
+  savedPlans: [],
+  loadedPlanId: null,
+  plannedPages: null,
+  plannedStyleSpec: '',
+  detectedPlatform: 'pc',
+  timestamp: Date.now(),
+});
 
 export default function App() {
-  // Restore state from localStorage on mount (lazy init — must be first)
-  const [restoredState] = useState(() => {
+  // Restore projects from localStorage on mount
+  const [initialData] = useState(() => {
     try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved) {
-        const data = JSON.parse(saved);
-        if (data.pages?.length > 0 && (Date.now() - (data.timestamp || 0) < 72 * 3600 * 1000)) {
-          // Filter out null/undefined entries from sparse arrays saved during parallel generation
-          if (data.pages) {
-            data.pages = data.pages.filter(Boolean);
-          }
-          return data;
+      let projects = null;
+      let activeProjectId = null;
+
+      const savedProjects = localStorage.getItem(PROJECTS_KEY);
+      if (savedProjects) {
+        const parsed = JSON.parse(savedProjects);
+        if (typeof parsed === 'object' && parsed !== null && Object.keys(parsed).length > 0) {
+          projects = parsed;
+          activeProjectId = localStorage.getItem(ACTIVE_PROJECT_KEY) || Object.keys(parsed)[0];
+          if (!projects[activeProjectId]) activeProjectId = Object.keys(projects)[0];
         }
       }
-    } catch (e) { /* ignore */ }
-    return null;
+
+      // Migrate from legacy flat state format
+      if (!projects) {
+        const saved = localStorage.getItem(LEGACY_STATE_KEY);
+        if (saved) {
+          const data = JSON.parse(saved);
+          if (data.pages?.length > 0 && (Date.now() - (data.timestamp || 0) < 72 * 3600 * 1000)) {
+            if (data.pages) data.pages = data.pages.filter(Boolean);
+            const legacyPlans = (() => {
+              try { return JSON.parse(localStorage.getItem(LEGACY_PLANS_KEY) || '[]'); } catch { return []; }
+            })();
+            const proj = createEmptyProject(data.projectName || '我的项目');
+            Object.assign(proj, {
+              contentDesc: data.contentDesc || '',
+              styleDesc: data.styleDesc || '',
+              selectedStyles: data.selectedStyles || ['business'],
+              pages: data.pages || [],
+              savedPlans: legacyPlans,
+              timestamp: data.timestamp || Date.now(),
+            });
+            projects = { [proj.id]: proj };
+            activeProjectId = proj.id;
+          }
+        }
+      }
+
+      if (!projects) {
+        const proj = createEmptyProject('我的项目');
+        projects = { [proj.id]: proj };
+        activeProjectId = proj.id;
+      }
+
+      return { projects, activeProjectId };
+    } catch (e) {
+      const proj = createEmptyProject('我的项目');
+      return { projects: { [proj.id]: proj }, activeProjectId: proj.id };
+    }
   });
+
+  // Projects state
+  const [projects, setProjects] = useState(initialData.projects);
+  const [activeProjectId, setActiveProjectId] = useState(initialData.activeProjectId);
+  const projectsRef = useRef(projects);
+  useEffect(() => { projectsRef.current = projects; }, [projects]);
+
+  const currentProject = projects[activeProjectId] || Object.values(projects)[0] || createEmptyProject();
+
+  // Helper to update current project's data
+  const updateCurrentProject = useCallback((updates) => {
+    setProjects(prev => ({
+      ...prev,
+      [activeProjectId]: { ...prev[activeProjectId], ...updates },
+    }));
+  }, [activeProjectId]);
 
   // Theme
   const [theme, setTheme] = useState('light');
 
-  // Project
-  const [projectName, setProjectName] = useState(restoredState?.projectName || '');
+  // Project data (derived from active project)
+  const projectName = currentProject.name || '';
+  const contentDesc = currentProject.contentDesc || '';
+  const styleDesc = currentProject.styleDesc || '';
+  const selectedStyles = currentProject.selectedStyles || ['business'];
+  const pages = currentProject.pages || [];
+  const history = currentProject.history || [];
+  const savedPlans = currentProject.savedPlans || [];
+  const loadedPlanId = currentProject.loadedPlanId || null;
+  const [plannedPages, setPlannedPages] = useState(null);
+  const [plannedStyleSpec, setPlannedStyleSpec] = useState('');
+  const [detectedPlatform, setDetectedPlatform] = useState('pc');
 
-  // Left panel state — default text is a short hint
-  const [contentDesc, setContentDesc] = useState(restoredState?.contentDesc || '');
-  const [styleDesc, setStyleDesc] = useState(restoredState?.styleDesc || '');
-  const [selectedStyles, setSelectedStyles] = useState(restoredState?.selectedStyles || ['business']);
+  // Wrapper setter for pages that updates current project
+  const setPages = useCallback((valueOrFn) => {
+    if (typeof valueOrFn === 'function') {
+      setProjects(prev => {
+        const proj = prev[activeProjectId];
+        if (!proj) return prev;
+        const newPages = valueOrFn(proj.pages || []);
+        return { ...prev, [activeProjectId]: { ...proj, pages: newPages } };
+      });
+    } else {
+      updateCurrentProject({ pages: valueOrFn });
+    }
+  }, [activeProjectId, updateCurrentProject]);
 
-  // File upload state
+  // File upload state (session-only, not project-scoped)
   const [uploadedFiles, setUploadedFiles] = useState([]);
   const handleFilesAdd = useCallback((newFiles) => setUploadedFiles((prev) => [...prev, ...newFiles]), []);
   const handleFileRemove = useCallback((index) => setUploadedFiles((prev) => prev.filter((_, i) => i !== index)), []);
 
-  // Generation state — multi-page
-  const [pages, setPages] = useState(restoredState?.pages || []);
+  // Generation state
   const [currentPageIndex, setCurrentPageIndex] = useState(0);
   const [isGenerating, setIsGenerating] = useState(false);
   const [generateError, setGenerateError] = useState('');
   const [generateProgress, setGenerateProgress] = useState('');
   const [progressCurrent, setProgressCurrent] = useState(0);
   const [progressTotal, setProgressTotal] = useState(0);
-
-  // Plan preview state — shown after planning, before generation
-  const [plannedPages, setPlannedPages] = useState(null);
-  const [plannedStyleSpec, setPlannedStyleSpec] = useState('');
 
   // Flag: user manually selected a page to preview during generation (ref to avoid stale closures)
   const userSelectedPageRef = useRef(false);
@@ -119,7 +205,7 @@ export default function App() {
   const generatedHtml = pages[currentPageIndex]?.html || '';
 
   // Refine state — restore code from saved pages
-  const [code, setCode] = useState(restoredState?.pages?.[0]?.html || '');
+  const [code, setCode] = useState(currentProject.pages?.[0]?.html || '');
   const [messages, setMessages] = useState([]);
   const [isRefining, setIsRefining] = useState(false);
   const [isRegenerating, setIsRegenerating] = useState(false);
@@ -145,44 +231,72 @@ export default function App() {
     return { provider, model };
   }, [activeProvider, aiConfig]);
 
-  // History — full records with pages data
+  // History — full records with pages data (derived from current project)
   const [showHistory, setShowHistory] = useState(false);
-  const [history, setHistory] = useState([]);
   const [currentHistoryId, setCurrentHistoryId] = useState(null);
 
-  // Saved plans — persist across sessions for quick re-execution
-  const [savedPlans, setSavedPlans] = useState(() => {
-    try {
-      return JSON.parse(localStorage.getItem(PLANS_STORAGE_KEY) || '[]');
-    } catch (e) { return []; }
-  });
-  const [loadedPlanId, setLoadedPlanId] = useState(null);
+  // Saved plans — derived from current project
 
   // ── Refs sync ──
   isGeneratingRef.current = isGenerating;
 
   // ── Persist to localStorage ──
   useEffect(() => {
-    if (!pages || pages.length === 0) return;
     try {
-      // Filter out null/undefined entries from sparse arrays during parallel generation
-      const validPages = pages.filter(Boolean);
-      if (validPages.length === 0) return;
-      const data = {
-        pages: validPages,
-        projectName,
-        contentDesc,
-        selectedStyles,
-        styleDesc,
-        timestamp: Date.now(),
-      };
-      const json = JSON.stringify(data);
-      // Skip if over 2MB to avoid quota issues
-      if (json.length < 2 * 1024 * 1024) {
-        localStorage.setItem(STORAGE_KEY, json);
+      const json = JSON.stringify(projects);
+      if (json.length < 5 * 1024 * 1024) {
+        localStorage.setItem(PROJECTS_KEY, json);
+        localStorage.setItem(ACTIVE_PROJECT_KEY, activeProjectId);
       }
     } catch (e) { /* quota exceeded — ignore */ }
-  }, [pages, projectName, contentDesc, selectedStyles, styleDesc]);
+  }, [projects, activeProjectId]);
+
+  // ── Project Management ──
+
+  const handleSwitchProject = useCallback((id) => {
+    if (id === activeProjectId) return;
+    setActiveProjectId(id);
+    const proj = projectsRef.current[id];
+    if (proj) {
+      setCurrentPageIndex(0);
+      setCode(proj.pages?.[0]?.html || '');
+      setMessages([]);
+      setPlannedPages(proj.plannedPages || null);
+      setPlannedStyleSpec(proj.plannedStyleSpec || '');
+      setDetectedPlatform(proj.detectedPlatform || 'pc');
+      setUploadedFiles([]);
+      setGenerateError('');
+      setGenerateProgress('');
+      setIsGenerating(false);
+      setIsRefining(false);
+      setIsRegenerating(false);
+    }
+  }, [activeProjectId]);
+
+  const handleCreateProject = useCallback(() => {
+    // Count existing projects for default naming
+    const count = Object.keys(projectsRef.current).length;
+    const defaultName = count === 0 ? '我的项目' : `项目 ${count + 1}`;
+    const proj = createEmptyProject(defaultName);
+    setProjects(prev => ({ ...prev, [proj.id]: proj }));
+    setActiveProjectId(proj.id);
+    setCurrentPageIndex(0);
+    setCode('');
+    setMessages([]);
+    setPlannedPages(null);
+    setPlannedStyleSpec('');
+    setDetectedPlatform('pc');
+    setUploadedFiles([]);
+    setGenerateError('');
+    setGenerateProgress('');
+    setIsGenerating(false);
+    setIsRefining(false);
+    setIsRegenerating(false);
+  }, []);
+
+  const handleProjectNameChange = useCallback((newName) => {
+    updateCurrentProject({ name: newName });
+  }, [updateCurrentProject]);
 
   // ── Theme & Style ──
 
@@ -195,8 +309,10 @@ export default function App() {
   }, []);
 
   const toggleStyle = useCallback((id) => {
-    setSelectedStyles((prev) => prev.includes(id) ? prev.filter((s) => s !== id) : [...prev, id]);
-  }, []);
+    const current = projectsRef.current[activeProjectId]?.selectedStyles || ['business'];
+    const next = current.includes(id) ? current.filter((s) => s !== id) : [...current, id];
+    updateCurrentProject({ selectedStyles: next });
+  }, [activeProjectId, updateCurrentProject]);
 
   // ── Phase 1: Plan ──
 
@@ -218,10 +334,11 @@ export default function App() {
 
       setPlannedPages(plan.pages);
       setPlannedStyleSpec(plan.styleSpec);
+      setDetectedPlatform(plan.platform || 'pc');
       setGenerateProgress('');
       setIsGenerating(false);
 
-      // Auto-save plan to history
+      // Auto-save plan to project
       const planEntry = {
         id: Date.now().toString(),
         timestamp: formatTime(new Date()),
@@ -230,19 +347,17 @@ export default function App() {
         styleDesc,
         plannedPages: plan.pages,
         styleSpec: plan.styleSpec,
+        platform: plan.platform || 'pc',
       };
-      setSavedPlans((prev) => {
-        const updated = [planEntry, ...prev.filter((p) => p.id !== loadedPlanId)];
-        try { localStorage.setItem(PLANS_STORAGE_KEY, JSON.stringify(updated)); } catch (e) { /* ignore */ }
-        return updated;
-      });
-      setLoadedPlanId(planEntry.id);
+      const currentPlans = projectsRef.current[activeProjectId]?.savedPlans || [];
+      const updatedPlans = [planEntry, ...currentPlans.filter((p) => p.id !== loadedPlanId)];
+      updateCurrentProject({ savedPlans: updatedPlans, loadedPlanId: planEntry.id });
     } catch (err) {
       setGenerateError(err.message || '规划失败');
       setIsGenerating(false);
       setGenerateProgress('');
     }
-  }, [contentDesc, selectedStyles, styleDesc, uploadedFiles, aiConfig, activeProvider, loadedPlanId]);
+  }, [contentDesc, selectedStyles, styleDesc, uploadedFiles, aiConfig, activeProvider, loadedPlanId, activeProjectId, updateCurrentProject]);
 
   // ── Phase 2: Generate (after plan confirmation) ──
 
@@ -267,7 +382,7 @@ export default function App() {
       const providerConfig = aiConfig[activeProvider] || {};
       const result = await generateProjectPages(
         activeProvider, providerConfig, plannedPages, plannedStyleSpec,
-        contentDesc, fileContents, selectedStyles, styleDesc,
+        contentDesc, fileContents, selectedStyles, styleDesc, detectedPlatform,
         (msg) => setGenerateProgress(msg),
         (pageResult, index, total) => {
           completedCount++;
@@ -301,7 +416,8 @@ export default function App() {
         pages: result.pages,
         pageCount: result.pages.length,
       };
-      setHistory((prev) => [entry, ...prev]);
+      const currentHistory = projectsRef.current[activeProjectId]?.history || [];
+      updateCurrentProject({ history: [entry, ...currentHistory] });
       setCurrentHistoryId(entry.id);
     } catch (err) {
       setGenerateError(err.message || '生成失败，请检查 AI 模型配置');
@@ -314,39 +430,40 @@ export default function App() {
       setPlannedPages(null); // now hide plan, generation is done
       userSelectedPageRef.current = false;
     }
-  }, [plannedPages, plannedStyleSpec, contentDesc, selectedStyles, styleDesc, aiConfig, activeProvider, uploadedFiles]);
+  }, [plannedPages, plannedStyleSpec, contentDesc, selectedStyles, styleDesc, aiConfig, activeProvider, uploadedFiles, detectedPlatform, activeProjectId, updateCurrentProject]);
 
   // Cancel plan
   const handleCancelPlan = useCallback(() => {
     setPlannedPages(null);
     setPlannedStyleSpec('');
-    setLoadedPlanId(null);
-  }, []);
+    setDetectedPlatform('pc');
+    updateCurrentProject({ loadedPlanId: null });
+  }, [updateCurrentProject]);
 
   // ── Saved Plans ──
 
   const handleLoadPlan = useCallback((plan) => {
-    setContentDesc(plan.description || '');
-    setSelectedStyles(plan.selectedStyles || ['business']);
-    setStyleDesc(plan.styleDesc || '');
+    updateCurrentProject({
+      contentDesc: plan.description || '',
+      selectedStyles: plan.selectedStyles || ['business'],
+      styleDesc: plan.styleDesc || '',
+      loadedPlanId: plan.id,
+    });
     setPlannedPages(plan.plannedPages);
     setPlannedStyleSpec(plan.styleSpec || '');
-    setLoadedPlanId(plan.id);
+    setDetectedPlatform(plan.platform || 'pc');
     setGenerateError('');
-  }, []);
+  }, [updateCurrentProject]);
 
   const handleDeletePlan = useCallback((planId) => {
-    setSavedPlans((prev) => {
-      const updated = prev.filter((p) => p.id !== planId);
-      try { localStorage.setItem(PLANS_STORAGE_KEY, JSON.stringify(updated)); } catch (e) { /* ignore */ }
-      return updated;
-    });
+    const currentPlans = projectsRef.current[activeProjectId]?.savedPlans || [];
+    updateCurrentProject({ savedPlans: currentPlans.filter((p) => p.id !== planId) });
     if (loadedPlanId === planId) {
       setPlannedPages(null);
       setPlannedStyleSpec('');
-      setLoadedPlanId(null);
+      updateCurrentProject({ loadedPlanId: null });
     }
-  }, [loadedPlanId]);
+  }, [loadedPlanId, activeProjectId, updateCurrentProject]);
 
   // ── Code & Chat ──
 
@@ -404,7 +521,7 @@ export default function App() {
       const styleSpec = plannedStyleSpec || buildStyleSpec(selectedStyles, styleDesc);
       const result = await regenerateSinglePage(
         activeProvider, providerConfig, page, styleSpec,
-        contentDesc, fileContents, selectedStyles, styleDesc, pages
+        contentDesc, fileContents, selectedStyles, styleDesc, pages, detectedPlatform
       );
       const html = result.html || '';
       setPages((prev) => {
@@ -419,7 +536,7 @@ export default function App() {
       setIsRegenerating(false);
       setGenerateProgress('');
     }
-  }, [isRegenerating, pages, currentPageIndex, aiConfig, activeProvider, contentDesc, selectedStyles, styleDesc, plannedStyleSpec, uploadedFiles]);
+  }, [isRegenerating, pages, currentPageIndex, aiConfig, activeProvider, contentDesc, selectedStyles, styleDesc, plannedStyleSpec, uploadedFiles, detectedPlatform]);
 
   // ── Export: Current Page HTML ──
 
@@ -567,13 +684,13 @@ export default function App() {
 
   const handleRestoreFromHistory = useCallback((entry) => {
     if (!entry?.pages) return;
-    setPages(entry.pages);
+    updateCurrentProject({ pages: entry.pages });
     setCurrentPageIndex(0);
     setCode(entry.pages[0]?.html || '');
     setCurrentHistoryId(entry.id);
     setMessages([]);
     setShowHistory(false);
-  }, []);
+  }, [updateCurrentProject]);
 
   // ── Other ──
 
@@ -600,7 +717,11 @@ export default function App() {
     <div className="app-layout" data-component="App Layout" data-od-id="app-layout">
       <TopBar
         projectName={projectName}
-        onProjectNameChange={setProjectName}
+        onProjectNameChange={handleProjectNameChange}
+        projects={projects}
+        activeProjectId={activeProjectId}
+        onSwitchProject={handleSwitchProject}
+        onCreateProject={handleCreateProject}
         onOpenSettings={() => setShowSettings(true)}
         onOpenHistory={() => setShowHistory(true)}
         onExport={handleExport}
@@ -614,9 +735,9 @@ export default function App() {
       <div className="workspace">
         <LeftPanel
           contentDesc={contentDesc}
-          onContentDescChange={setContentDesc}
+          onContentDescChange={(v) => updateCurrentProject({ contentDesc: v })}
           styleDesc={styleDesc}
-          onStyleDescChange={setStyleDesc}
+          onStyleDescChange={(v) => updateCurrentProject({ styleDesc: v })}
           selectedStyles={selectedStyles}
           onToggleStyle={toggleStyle}
           onPlan={handlePlan}
@@ -625,6 +746,7 @@ export default function App() {
           isGenerating={isGenerating}
           isPlanning={!!plannedPages}
           plannedPages={plannedPages}
+          detectedPlatform={detectedPlatform}
           pages={pages}
           activeModel={activeModel}
           onOpenSettings={() => setShowSettings(true)}
@@ -640,6 +762,7 @@ export default function App() {
         <RightPanel
           generatedHtml={generatedHtml}
           isGenerating={isGenerating}
+          detectedPlatform={detectedPlatform}
           onRefresh={handleRefresh}
           onExport={handleExport}
           onExportAll={handleExportAll}

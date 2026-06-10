@@ -10,6 +10,9 @@ const STYLE_DESCRIPTIONS = {
   playful: '活泼风格：暖色调，橙色点缀，圆体字体，大圆角，轻松活泼的语气',
   tech: '科技风格：深色背景，绿色点缀，等宽字体，代码风格排版',
   editorial: '文艺风格：米色底，棕色点缀，衬线字体，斜体标题，阅读体验佳',
+  modern: '现代SaaS：纯净白底，靛蓝主色，大圆角卡片，柔和阴影，清晰的信息层级',
+  elegant: '优雅高端：纯黑背景，金色点缀，精致衬线字体，奢品质感',
+  fintech: '金融科技：深蓝背景，青色点缀，数据可视化风格，紧凑专业排版',
 };
 
 // Concrete design tokens per style for cross-page consistency
@@ -43,6 +46,44 @@ const STYLE_SPECS = {
     typography: "font-family: 'Georgia', 'Times New Roman', serif; 标题 italic",
     components: 'border-radius: 4px; 无阴影; 细边框 1px solid #e5e1d8',
     spacing: 'padding: 40-60px; gap: 24-32px; 阅读最大宽度 700px',
+  },
+  modern: {
+    colors: '背景 #f8fafc，表面 #ffffff，文字 #0f172a，次要 #64748b，主色 #6366f1，边框 #e2e8f0',
+    typography: "font-family: 'Inter', -apple-system, sans-serif; 标题 font-weight: 700; letter-spacing: -0.02em",
+    components: 'border-radius: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); border: 1px solid #e2e8f0',
+    spacing: 'padding: 32-48px; gap: 20-28px; 最大宽度 1280px',
+  },
+  elegant: {
+    colors: '背景 #0a0a0a，表面 #171717，文字 #f5f5f4，次要 #a8a29e，主色 #d4af37，边框 #292524',
+    typography: "font-family: 'Playfair Display', Georgia, serif; 标题 letter-spacing: 0.05em",
+    components: 'border-radius: 2px; 无阴影; 细边框 1px solid #292524; 金色装饰线',
+    spacing: 'padding: 48-80px; gap: 32-48px; 大量留白营造高级感',
+  },
+  fintech: {
+    colors: '背景 #0c1222，表面 #1a2332，文字 #e2e8f0，次要 #94a3b8，主色 #06b6d4，边框 #1e293b',
+    typography: "font-family: 'Inter', -apple-system, sans-serif; 数据用 monospace; 标题 font-weight: 600",
+    components: 'border-radius: 8px; 轻微投影; border: 1px solid #1e293b; 数据卡片风格',
+    spacing: 'padding: 24-40px; gap: 16-24px; 紧凑信息密度',
+  },
+};
+
+// Platform-specific constraints for consistent page generation
+const PLATFORM_SPECS = {
+  mobile: {
+    label: '移动端',
+    viewport: 'max-width: 375px; margin: 0 auto; min-height: 100vh; position: relative;',
+    navigation: '底部标签栏（fixed bottom tab bar），包含 3-5 个主要入口，每个标签带图标+文字，当前页面高亮。不要使用顶部导航栏。',
+    layout: '单列布局，全宽内容区，卡片式排列。使用 flex-direction: column。',
+    interaction: '触控优先：按钮最小高度 44px，点击区域足够大，使用大圆角（12-16px），适合手指操作。',
+    meta: '<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">',
+  },
+  pc: {
+    label: 'PC端',
+    viewport: 'max-width: 1200px; margin: 0 auto; padding: 0 24px;',
+    navigation: '顶部水平导航栏（sticky top nav），包含 logo + 页面链接，当前页面高亮。',
+    layout: '宽幅多列布局，可使用 grid 或 flex 横向排列。',
+    interaction: '鼠标交互：标准按钮大小，hover 效果，下拉菜单等桌面端交互。',
+    meta: '<meta name="viewport" content="width=device-width, initial-scale=1">',
   },
 };
 
@@ -251,39 +292,53 @@ export async function planProject(provider, config, contentDesc, fileContents, s
 
   const styleSpec = buildStyleSpec(selectedStyles, styleDesc);
 
-  const systemPrompt = `你是一个专业的产品经理兼前端工程师。用户会给你产品需求描述和上传的文件内容，你需要分析这些需求，将项目拆分成多个页面，并返回页面规划方案。
+  const systemPrompt = `你是一个专业的产品经理兼前端工程师。用户会给你产品需求描述和上传的文件内容，你需要分析这些需求，将项目拆分成多个页面，并判断目标平台。
 
-返回格式要求（严格 JSON 数组）：
-[
-  {
-    "name": "页面名称（中文）",
-    "description": "页面功能简述（1-2句话）",
-    "route": "/page-route"
-  }
-]
+返回格式要求（严格 JSON 对象）：
+{
+  "platform": "mobile" 或 "pc",
+  "pages": [
+    {
+      "name": "页面名称（中文）",
+      "description": "页面功能简述（1-2句话）",
+      "route": "/page-route"
+    }
+  ]
+}
+
+platform 判断规则：
+- "mobile"：手机APP、微信小程序、支付宝小程序、H5移动端、外卖/打车/购物APP等移动场景
+- "pc"：后台管理系统、企业官网、SaaS平台、数据大屏、桌面Web等桌面端场景
+- 根据需求描述的内容和场景来判断，不要猜测，选择最合适的平台
 
 规则：
 1. 每个页面应有明确的功能职责
 2. route 使用英文小写 kebab-case 格式，以 / 开头
 3. 如果需求较简单（单一页面），可以只返回 1 个页面
-4. 不要输出任何其他内容，只输出 JSON 数组`;
+4. 不要输出任何其他内容，只输出 JSON 对象`;
 
   const userPrompt = buildContextPrompt(contentDesc, fileContents, selectedStyles, styleDesc)
     + '\n\n' + styleSpec
-    + '\n\n请分析以上需求，将项目拆分为多个页面。返回严格的 JSON 数组格式，不要输出任何其他内容。';
+    + '\n\n请分析以上需求，判断目标平台（mobile 或 pc），并将项目拆分为多个页面。返回严格的 JSON 对象格式，不要输出任何其他内容。';
 
   const rawResponse = await callAI(provider, config, systemPrompt, userPrompt);
 
-  let pages;
+  let parsed;
   try {
-    const jsonMatch = rawResponse.content.match(/\[[\s\S]*\]/);
-    pages = JSON.parse(jsonMatch ? jsonMatch[0] : rawResponse.content);
+    const jsonMatch = rawResponse.content.match(/\{[\s\S]*\}/);
+    parsed = JSON.parse(jsonMatch ? jsonMatch[0] : rawResponse.content);
   } catch {
     throw new Error('AI 返回的页面规划格式不正确，无法解析为 JSON');
   }
+
+  // Support both new format {platform, pages} and legacy format (direct array)
+  const pages = Array.isArray(parsed) ? parsed : parsed.pages;
+  const platform = (!Array.isArray(parsed) && parsed.platform) ? parsed.platform : 'pc';
+
   if (!Array.isArray(pages) || pages.length === 0) throw new Error('AI 未能规划出有效的页面结构');
 
   return {
+    platform: platform === 'mobile' ? 'mobile' : 'pc',
     pages: pages.map((p) => ({
       name: p.name || '未命名页面',
       description: p.description || '',
@@ -365,7 +420,7 @@ function injectNavigation(pages) {
  * for truncated responses, preventing API rate-limit issues.
  * Calls onPageGenerated as each page completes.
  */
-export async function generateProjectPages(provider, config, plannedPages, styleSpec, contentDesc, fileContents, selectedStyles, styleDesc, onProgress, onPageGenerated) {
+export async function generateProjectPages(provider, config, plannedPages, styleSpec, contentDesc, fileContents, selectedStyles, styleDesc, platform, onProgress, onPageGenerated) {
   if (!config?.apiKey) throw new Error('请先在设置中配置 AI 模型的 API Key');
 
   const MAX_CONCURRENT = 3;
@@ -385,7 +440,7 @@ export async function generateProjectPages(provider, config, plannedPages, style
       try {
         const result = await generateSinglePage(
           provider, config, page, styleSpec, contentDesc,
-          fileContents, selectedStyles, styleDesc, plannedPages
+          fileContents, selectedStyles, styleDesc, plannedPages, platform
         );
 
         // Check if response was truncated (finish_reason === 'length')
@@ -438,8 +493,19 @@ export async function generateProjectPages(provider, config, plannedPages, style
   return { pages: finalPages };
 }
 
-async function generateSinglePage(provider, config, page, styleSpec, contentDesc, fileContents, selectedStyles, styleDesc, allPages) {
+async function generateSinglePage(provider, config, page, styleSpec, contentDesc, fileContents, selectedStyles, styleDesc, allPages, platform = 'pc') {
+  const platSpec = PLATFORM_SPECS[platform] || PLATFORM_SPECS.pc;
+
   const systemPrompt = `你是一个专业的 HTML/CSS 原型生成器。用户会给你单个页面的需求描述和全局设计规范，你需要生成一个完整、可直接运行的单页 HTML 文件。
+
+目标平台：${platform === 'mobile' ? '移动端（手机APP/小程序）' : 'PC端（桌面网页）'}
+
+平台规范：
+- 视口设置：${platSpec.meta}
+- 布局约束：${platSpec.viewport}
+- 导航模式：${platSpec.navigation}
+- 布局方式：${platSpec.layout}
+- 交互方式：${platSpec.interaction}
 
 规则：
 1. 输出必须是完整的 HTML 文件，从 <!DOCTYPE html> 到 </html>
@@ -450,21 +516,27 @@ async function generateSinglePage(provider, config, page, styleSpec, contentDesc
 6. 只输出 HTML 代码，不要输出任何解释性文字
 7. 不要用 markdown 代码块包裹，直接输出 HTML
 8. 必须严格遵守全局设计规范中的配色、字体和组件样式
-9. 如果页面内容区域的顶部需要放置导航，使用简洁的文字链接风格`;
+9. ${platform === 'mobile' ? '页面内容区域顶部放置简洁的文字链接导航，底部放置固定导航栏（tab bar）' : '页面内容区域上方放置水平导航栏'}
+10. 所有导航链接必须使用 <a href="文件名.html"> 格式，文件名必须与下方页面列表中的文件名完全一致
+11. 页面中所有可点击的按钮、链接，如果对应其他页面的功能，都必须使用 <a> 标签并链接到对应的页面文件`;
 
   let userPrompt = '';
   userPrompt += `## 当前页面信息\n`;
   userPrompt += `- 页面名称：${page.name}\n`;
   userPrompt += `- 页面描述：${page.description}\n`;
-  userPrompt += `- 页面路由：${page.route}\n\n`;
+  userPrompt += `- 页面路由：${page.route}\n`;
+  userPrompt += `- 目标平台：${platform === 'mobile' ? '移动端（手机APP/小程序）' : 'PC端（桌面网页）'}\n\n`;
 
   if (allPages && allPages.length > 1) {
-    userPrompt += `## 完整页面列表（共 ${allPages.length} 页）\n`;
+    userPrompt += `## 完整页面列表及对应文件名（共 ${allPages.length} 页）\n`;
     allPages.forEach((p, i) => {
+      const fn = pageFileName(p, i);
       const marker = p.route === page.route ? ' ← 当前页面' : '';
-      userPrompt += `${i + 1}. ${p.name}（${p.route}）${marker}\n`;
+      userPrompt += `${i + 1}. ${p.name} → 文件名: ${fn}${marker}\n`;
     });
-    userPrompt += `请在页面内容区域上方放置一个简洁的导航栏，包含所有页面名称作为文字链接，当前页面高亮显示，其他页面使用普通样式。导航应与页面整体设计风格一致。\n\n`;
+    userPrompt += `\n【重要】页面间的导航和跳转必须使用上述文件名作为 href 属性值。`;
+    userPrompt += `例如：要跳转到「${allPages[0].name}」页面，必须使用 <a href="${pageFileName(allPages[0], 0)}">。`;
+    userPrompt += `所有按钮、链接、导航元素都应使用 <a> 标签并设置正确的 href 属性来实现页面跳转。\n\n`;
   }
 
   if (fileContents.length > 0) {
@@ -481,6 +553,8 @@ async function generateSinglePage(provider, config, page, styleSpec, contentDesc
   userPrompt += styleSpec + '\n\n';
   userPrompt += `请根据以上信息，为「${page.name}」页面生成完整的单页 HTML 原型。`;
   userPrompt += '该页面应严格遵循规划中的功能描述和全局设计规范。';
+  userPrompt += `页面必须符合${platform === 'mobile' ? '移动端' : 'PC端'}的布局规范。`;
+  userPrompt += '所有页面间的跳转链接必须使用正确的文件名。';
   userPrompt += '只输出 HTML 代码，不要输出任何解释性文字。';
 
   const rawResponse = await callAI(provider, config, systemPrompt, userPrompt);
@@ -512,8 +586,8 @@ export async function refinePage(provider, config, currentHtml, userInstruction)
 /**
  * Regenerate a single page. Wrapper around the internal generateSinglePage.
  */
-export async function regenerateSinglePage(provider, config, page, styleSpec, contentDesc, fileContents, selectedStyles, styleDesc, allPages) {
-  return generateSinglePage(provider, config, page, styleSpec, contentDesc, fileContents, selectedStyles, styleDesc, allPages);
+export async function regenerateSinglePage(provider, config, page, styleSpec, contentDesc, fileContents, selectedStyles, styleDesc, allPages, platform = 'pc') {
+  return generateSinglePage(provider, config, page, styleSpec, contentDesc, fileContents, selectedStyles, styleDesc, allPages, platform);
 }
 
 // ── Prompt helpers ──────────────────────────────────────

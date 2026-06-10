@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 
 export default function RightPanel({
-  generatedHtml, isGenerating, onRefresh,
+  generatedHtml, isGenerating, onRefresh, detectedPlatform,
   onExport, onExportAll, onExportImage, onExportAllImages,
   refinePanel, error, progress, progressCurrent, progressTotal,
   plannedPages, pages, currentPageIndex, onPageChange,
@@ -25,6 +25,15 @@ export default function RightPanel({
   useEffect(() => {
     if (!isGenerating) setUserPreviewIndex(null);
   }, [isGenerating]);
+
+  // Set default device based on detected platform
+  useEffect(() => {
+    if (detectedPlatform === 'mobile') {
+      setDevice('mobile');
+    } else {
+      setDevice('desktop');
+    }
+  }, [detectedPlatform]);
 
   // Determine which HTML to show in the preview
   // During generation: only show iframe when user manually selects a completed page

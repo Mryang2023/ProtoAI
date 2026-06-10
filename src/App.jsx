@@ -9,7 +9,7 @@ import AISettingsModal from './components/AISettingsModal.jsx';
 import VersionHistory from './components/VersionHistory.jsx';
 import { planProject, generateProjectPages, readFileContents, capturePageAsImage, refinePage, regenerateSinglePage, buildStyleSpec } from './aiService.js';
 
-const PROVIDER_NAMES = { openai: 'OpenAI', claude: 'Claude', custom: 'Mimo' };
+const BUILTIN_PROVIDER_NAMES = { openai: 'OpenAI', claude: 'Claude', custom: 'Mimo' };
 
 function formatTime(date) {
   const h = date.getHours().toString().padStart(2, '0');
@@ -131,8 +131,11 @@ export default function App() {
   const [activeProvider, setActiveProvider] = useState('custom');
 
   const activeModel = useMemo(() => {
-    const provider = PROVIDER_NAMES[activeProvider] || activeProvider;
+    // Dynamic provider name: built-in names + custom provider names from config
     const cfg = aiConfig[activeProvider];
+    const provider = BUILTIN_PROVIDER_NAMES[activeProvider]
+      || cfg?.name
+      || activeProvider;
     const model = cfg?.model || (activeProvider === 'openai' ? 'gpt-4o' : activeProvider === 'claude' ? 'claude-sonnet-4-20250514' : '未配置');
     return { provider, model };
   }, [activeProvider, aiConfig]);

@@ -2219,6 +2219,43 @@ body {
 }
 
 /* ============================================
+   Custom Provider Styles
+   ============================================ */
+
+.add-provider-btn {
+  border: 1px dashed var(--border);
+  background: transparent;
+  color: var(--fg-muted);
+  transition: all .15s;
+}
+.add-provider-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 4%, transparent);
+}
+
+.provider-remove-btn:hover {
+  opacity: 1 !important;
+  color: var(--danger) !important;
+}
+
+.preset-dropdown {
+  animation: fadeSlideUp .15s ease-out;
+}
+
+.preset-item {
+  transition: background .1s;
+}
+.preset-item:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent, #2563eb) 6%, transparent);
+}
+
+@keyframes fadeSlideUp {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ============================================
    Responsive
    ============================================ */
 @media (max-width: 1024px) {

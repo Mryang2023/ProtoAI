@@ -73,14 +73,49 @@ export function buildStyleSpec(selectedStyles, styleDesc) {
 
 /**
  * Read text content from uploaded files (best-effort).
+ * Supports text files (txt, md, csv, etc.), images (metadata only),
+ * and Excel files (.xls, .xlsx) via the xlsx library.
  */
 export async function readFileContents(files) {
   const results = [];
   for (const file of files) {
+    // Skip images — just note the filename
     if (file.type?.startsWith('image/')) {
       results.push({ name: file.name, content: `[图片文件: ${file.name}，类型 ${file.type}]` });
       continue;
     }
+
+    // Detect Excel files by MIME type or extension
+    const ext = file.name.split('.').pop()?.toLowerCase();
+    const isExcel =
+      file.type === 'application/vnd.ms-excel' ||
+      file.type === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
+      ext === 'xls' ||
+      ext === 'xlsx';
+
+    if (isExcel) {
+      try {
+        const XLSX = await import('xlsx');
+        const buffer = await file.arrayBuffer();
+        const workbook = XLSX.read(buffer, { type: 'array' });
+        let text = `Excel 文件: ${file.name}（共 ${workbook.SheetNames.length} 个工作表）\n\n`;
+        for (const sheetName of workbook.SheetNames) {
+          const sheet = workbook.Sheets[sheetName];
+          const csv = XLSX.utils.sheet_to_csv(sheet, { FS: '\t', blankrows: false });
+          text += `--- 工作表: ${sheetName} ---\n${csv}\n\n`;
+        }
+        const maxChars = 30000;
+        const truncated = text.length > maxChars
+          ? text.slice(0, maxChars) + `\n\n... (Excel 内容过长，已截断，共 ${text.length} 字符)`
+          : text;
+        results.push({ name: file.name, content: truncated });
+      } catch {
+        results.push({ name: file.name, content: `[无法解析 Excel 文件: ${file.name}]` });
+      }
+      continue;
+    }
+
+    // Default: read as plain text
     try {
       const text = await file.text();
       const maxChars = 15000;

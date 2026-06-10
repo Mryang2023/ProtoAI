@@ -13,6 +13,8 @@ const ACCEPTED_TYPES = [
   'application/pdf',
   'application/msword',
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   'text/plain',
   'text/markdown',
   'text/csv',
@@ -22,13 +24,13 @@ const ACCEPTED_TYPES = [
   'image/svg+xml',
 ];
 
-const ACCEPT_STRING = '.pdf,.doc,.docx,.txt,.md,.csv,.png,.jpg,.jpeg,.webp,.svg';
+const ACCEPT_STRING = '.pdf,.doc,.docx,.xls,.xlsx,.txt,.md,.csv,.png,.jpg,.jpeg,.webp,.svg';
 
 const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20MB
 
 function getFileIcon(type) {
   if (type?.startsWith('image/')) return Image;
-  if (type?.includes('pdf') || type?.includes('word') || type?.includes('document')) return FileText;
+  if (type?.includes('pdf') || type?.includes('word') || type?.includes('document') || type?.includes('excel') || type?.includes('spreadsheet')) return FileText;
   return File;
 }
 
@@ -53,7 +55,7 @@ export default function FileUpload({ files, onFilesAdd, onFileRemove }) {
       }
       // Accept based on extension if MIME type is missing (some browsers)
       const ext = file.name.split('.').pop()?.toLowerCase();
-      const allowedExts = ['pdf', 'doc', 'docx', 'txt', 'md', 'csv', 'png', 'jpg', 'jpeg', 'webp', 'svg'];
+      const allowedExts = ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'txt', 'md', 'csv', 'png', 'jpg', 'jpeg', 'webp', 'svg'];
       if (!ACCEPTED_TYPES.includes(file.type) && !allowedExts.includes(ext)) {
         errors.push(`${file.name} 格式不支持`);
         return;
@@ -133,7 +135,7 @@ export default function FileUpload({ files, onFilesAdd, onFileRemove }) {
           {isDragOver ? '松开即可上传' : '拖拽文件到此处，或点击选择'}
         </span>
         <span className="file-dropzone-hint">
-          支持 PDF、Word、TXT、Markdown、图片，单文件 ≤ 20MB
+          支持 PDF、Word、Excel、TXT、Markdown、图片，单文件 ≤ 20MB
         </span>
       </div>
 

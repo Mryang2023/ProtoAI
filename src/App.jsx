@@ -394,10 +394,11 @@ export default function App() {
       const providerConfig = aiConfig[activeProvider] || {};
       const fileContents = uploadedFiles.length > 0 ? await readFileContents(uploadedFiles) : [];
       const styleSpec = plannedStyleSpec || buildStyleSpec(selectedStyles, styleDesc);
-      const html = await regenerateSinglePage(
+      const result = await regenerateSinglePage(
         activeProvider, providerConfig, page, styleSpec,
         contentDesc, fileContents, selectedStyles, styleDesc, pages
       );
+      const html = result.html || '';
       setPages((prev) => {
         const next = [...prev];
         next[currentPageIndex] = { ...next[currentPageIndex], html, error: null };

@@ -153,7 +153,7 @@ async function callOpenAICompatible(apiKey, endpoint, model, systemPrompt, userP
         { role: 'user', content: userPrompt },
       ],
       temperature: 0.7,
-      max_tokens: 8000,
+      max_tokens: 16000,
     }),
   });
   if (!response.ok) {
@@ -163,9 +163,10 @@ async function callOpenAICompatible(apiKey, endpoint, model, systemPrompt, userP
     throw new Error(msg);
   }
   const data = await response.json();
-  const content = data.choices?.[0]?.message?.content;
+  const choice = data.choices?.[0];
+  const content = choice?.message?.content;
   if (!content) throw new Error('AI 返回了空内容');
-  return content;
+  return { content, finishReason: choice?.finish_reason || 'stop' };
 }
 
 async function callClaude(apiKey, endpoint, model, systemPrompt, userPrompt) {
@@ -181,7 +182,7 @@ async function callClaude(apiKey, endpoint, model, systemPrompt, userPrompt) {
     },
     body: JSON.stringify({
       model: model || 'claude-sonnet-4-20250514',
-      max_tokens: 8000,
+      max_tokens: 16000,
       system: systemPrompt,
       messages: [{ role: 'user', content: userPrompt }],
     }),
@@ -195,7 +196,7 @@ async function callClaude(apiKey, endpoint, model, systemPrompt, userPrompt) {
   const data = await response.json();
   const content = data.content?.[0]?.text;
   if (!content) throw new Error('AI 返回了空内容');
-  return content;
+  return { content, finishReason: data.stop_reason === 'max_tokens' ? 'length' : 'stop' };
 }
 
 function extractHtml(text) {
@@ -206,6 +207,34 @@ function extractHtml(text) {
     const start = html.indexOf('<!DOCTYPE');
     const htmlStart = start !== -1 ? start : html.indexOf('<html');
     if (htmlStart > 0) html = html.slice(htmlStart);
+  }
+  // Repair truncated HTML: close unclosed tags
+  html = repairHtml(html);
+  return html;
+}
+
+/**
+ * Attempt to close unclosed HTML tags when AI output was truncated.
+ */
+function repairHtml(html) {
+  if (!html) return html;
+  // If HTML is clearly truncated (no closing </html>)
+  if (!html.includes('</html>')) {
+    // Close any open style tag
+    const styleOpens = (html.match(/<style/g) || []).length;
+    const styleCloses = (html.match(/<\/style>/g) || []).length;
+    if (styleOpens > styleCloses) html += '\n</style>';
+
+    // Close any open div/section/main/header/footer/nav/article tags (common in layouts)
+    const tagsToClose = ['div', 'section', 'main', 'header', 'footer', 'nav', 'article', 'aside', 'body', 'html'];
+    for (const tag of tagsToClose) {
+      const opens = (html.match(new RegExp(`<${tag}[\\s>]`, 'gi')) || []).length;
+      const closes = (html.match(new RegExp(`</${tag}>`, 'gi')) || []).length;
+      const diff = opens - closes;
+      for (let j = 0; j < diff; j++) {
+        html += `\n</${tag}>`;
+      }
+    }
   }
   return html;
 }
@@ -247,8 +276,8 @@ export async function planProject(provider, config, contentDesc, fileContents, s
 
   let pages;
   try {
-    const jsonMatch = rawResponse.match(/\[[\s\S]*\]/);
-    pages = JSON.parse(jsonMatch ? jsonMatch[0] : rawResponse);
+    const jsonMatch = rawResponse.content.match(/\[[\s\S]*\]/);
+    pages = JSON.parse(jsonMatch ? jsonMatch[0] : rawResponse.content);
   } catch {
     throw new Error('AI 返回的页面规划格式不正确，无法解析为 JSON');
   }
@@ -300,22 +329,61 @@ function injectNavigation(pages) {
 
 /**
  * Phase 2: Generate HTML for each planned page.
- * Pages are generated in PARALLEL for speed — all AI calls fire at once.
+ * Uses staggered concurrency (max 3 simultaneous requests) with retry
+ * for truncated responses, preventing API rate-limit issues.
  * Calls onPageGenerated as each page completes.
  */
 export async function generateProjectPages(provider, config, plannedPages, styleSpec, contentDesc, fileContents, selectedStyles, styleDesc, onProgress, onPageGenerated) {
   if (!config?.apiKey) throw new Error('请先在设置中配置 AI 模型的 API Key');
 
+  const MAX_CONCURRENT = 3;
+  const STAGGER_DELAY_MS = 800; // delay between launching each request
+  const MAX_RETRIES = 2;
+
   // Pre-allocate results array to preserve page order
   const results = new Array(plannedPages.length);
   const completed = new Set();
 
-  onProgress?.(`正在并行生成 ${plannedPages.length} 个页面...`);
+  onProgress?.(`正在生成 ${plannedPages.length} 个页面...`);
 
-  // Fire all page generations concurrently
+  // Generate a single page with retry logic for truncated responses
+  async function generateWithRetry(page, index) {
+    let lastError = null;
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+      try {
+        const result = await generateSinglePage(
+          provider, config, page, styleSpec, contentDesc,
+          fileContents, selectedStyles, styleDesc, plannedPages
+        );
+
+        // Check if response was truncated (finish_reason === 'length')
+        if (result.finishReason === 'length' && attempt < MAX_RETRIES) {
+          // Response was cut off — retry once more
+          console.warn(`Page "${page.name}" truncated (attempt ${attempt + 1}), retrying...`);
+          continue;
+        }
+
+        return result.html;
+      } catch (err) {
+        lastError = err;
+        if (attempt < MAX_RETRIES) {
+          // Wait before retry
+          await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
+        }
+      }
+    }
+    throw lastError || new Error('生成失败');
+  }
+
+  // Staggered concurrency: launch requests in waves
   const promises = plannedPages.map(async (page, i) => {
+    // Stagger start times to avoid overwhelming the API
+    if (i > 0 && i % MAX_CONCURRENT === 0) {
+      await new Promise((r) => setTimeout(r, STAGGER_DELAY_MS));
+    }
+
     try {
-      const html = await generateSinglePage(provider, config, page, styleSpec, contentDesc, fileContents, selectedStyles, styleDesc, plannedPages);
+      const html = await generateWithRetry(page, i);
       const result = { ...page, html };
       results[i] = result;
       completed.add(i);
@@ -384,10 +452,8 @@ async function generateSinglePage(provider, config, page, styleSpec, contentDesc
   userPrompt += '只输出 HTML 代码，不要输出任何解释性文字。';
 
   const rawResponse = await callAI(provider, config, systemPrompt, userPrompt);
-  return extractHtml(rawResponse);
+  return { html: extractHtml(rawResponse.content), finishReason: rawResponse.finishReason };
 }
-
-// ── Chat Refinement ────────────────────────────────────
 
 /**
  * Send current HTML + user instruction to AI and return modified HTML.
@@ -406,7 +472,7 @@ export async function refinePage(provider, config, currentHtml, userInstruction)
   const userPrompt = `## 当前页面 HTML\n\n\`\`\`html\n${currentHtml.slice(0, 12000)}\n\`\`\`\n\n## 修改指令\n\n${userInstruction}\n\n请按照修改指令调整 HTML，返回完整的修改后 HTML 代码。`;
 
   const rawResponse = await callAI(provider, config, systemPrompt, userPrompt);
-  return extractHtml(rawResponse);
+  return extractHtml(rawResponse.content);
 }
 
 // ── Single Page Regeneration ────────────────────────────

@@ -27,8 +27,10 @@ export default function RightPanel({
   }, [isGenerating]);
 
   // Determine which HTML to show in the preview
-  const previewHtml = (isGenerating && userPreviewIndex !== null)
-    ? (pages[userPreviewIndex]?.html || '')
+  // During generation: only show iframe when user manually selects a completed page
+  // This prevents iframe from thrashing between different HTML documents
+  const previewHtml = isGenerating
+    ? (userPreviewIndex !== null ? (pages[userPreviewIndex]?.html || '') : '')
     : generatedHtml;
   const devices = [
     { id: 'desktop', icon: Monitor, label: '桌面' },
@@ -229,9 +231,9 @@ function ProgressState({ progress, current, total, plannedPages, pages, onPrevie
       isFailed: !!pageData?.error,
       isGenerating: !!(
         pages &&
-        i === (pages.filter(Boolean).length) &&
         current < total &&
-        !pageData?.html
+        !pageData?.html &&
+        !pageData?.error
       ),
     };
   });

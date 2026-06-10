@@ -1,4 +1,5 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
+import { Component as ReactComponent } from 'react';
 import JSZip from 'jszip';
 import TopBar from './components/TopBar.jsx';
 import LeftPanel from './components/LeftPanel.jsx';
@@ -20,17 +21,72 @@ function safeName(name) {
   return name.replace(/[\\/:*?"<>|]/g, '_').replace(/\s+/g, '_');
 }
 
+// ── Error Boundary ─────────────────────────────────────
+class ErrorBoundary extends ReactComponent {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+  componentDidCatch(error, info) {
+    console.error('ErrorBoundary caught:', error, info);
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div style={{ padding: 48, textAlign: 'center', fontFamily: 'system-ui' }}>
+          <h2 style={{ fontSize: 20, marginBottom: 12 }}>页面渲染出错了</h2>
+          <p style={{ color: '#666', marginBottom: 20 }}>
+            {this.state.error?.message || '组件渲染异常'}
+          </p>
+          <p style={{ color: '#999', fontSize: 13, marginBottom: 24 }}>
+            已生成的数据已保存在本地，刷新页面即可恢复。
+          </p>
+          <button
+            onClick={() => window.location.reload()}
+            style={{
+              padding: '10px 24px', borderRadius: 8, border: 'none',
+              background: '#2563eb', color: '#fff', cursor: 'pointer', fontSize: 14,
+            }}
+          >
+            刷新恢复
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+const STORAGE_KEY = 'protoai_saved_state';
+
 export default function App() {
+  // Restore state from localStorage on mount (lazy init — must be first)
+  const [restoredState] = useState(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      if (saved) {
+        const data = JSON.parse(saved);
+        if (data.pages?.length > 0 && (Date.now() - (data.timestamp || 0) < 72 * 3600 * 1000)) {
+          return data;
+        }
+      }
+    } catch (e) { /* ignore */ }
+    return null;
+  });
+
   // Theme
   const [theme, setTheme] = useState('light');
 
   // Project
-  const [projectName, setProjectName] = useState('');
+  const [projectName, setProjectName] = useState(restoredState?.projectName || '');
 
   // Left panel state — default text is a short hint
-  const [contentDesc, setContentDesc] = useState('');
-  const [styleDesc, setStyleDesc] = useState('');
-  const [selectedStyles, setSelectedStyles] = useState(['business']);
+  const [contentDesc, setContentDesc] = useState(restoredState?.contentDesc || '');
+  const [styleDesc, setStyleDesc] = useState(restoredState?.styleDesc || '');
+  const [selectedStyles, setSelectedStyles] = useState(restoredState?.selectedStyles || ['business']);
 
   // File upload state
   const [uploadedFiles, setUploadedFiles] = useState([]);
@@ -38,7 +94,7 @@ export default function App() {
   const handleFileRemove = useCallback((index) => setUploadedFiles((prev) => prev.filter((_, i) => i !== index)), []);
 
   // Generation state — multi-page
-  const [pages, setPages] = useState([]);
+  const [pages, setPages] = useState(restoredState?.pages || []);
   const [currentPageIndex, setCurrentPageIndex] = useState(0);
   const [isGenerating, setIsGenerating] = useState(false);
   const [generateError, setGenerateError] = useState('');
@@ -50,14 +106,15 @@ export default function App() {
   const [plannedPages, setPlannedPages] = useState(null);
   const [plannedStyleSpec, setPlannedStyleSpec] = useState('');
 
-  // Flag: user manually selected a page to preview during generation
-  const [userSelectedPage, setUserSelectedPage] = useState(false);
+  // Flag: user manually selected a page to preview during generation (ref to avoid stale closures)
+  const userSelectedPageRef = useRef(false);
+  const isGeneratingRef = useRef(false);
 
   // Current page html (derived)
   const generatedHtml = pages[currentPageIndex]?.html || '';
 
-  // Refine state
-  const [code, setCode] = useState('');
+  // Refine state — restore code from saved pages
+  const [code, setCode] = useState(restoredState?.pages?.[0]?.html || '');
   const [messages, setMessages] = useState([]);
   const [isRefining, setIsRefining] = useState(false);
   const [isRegenerating, setIsRegenerating] = useState(false);
@@ -84,6 +141,29 @@ export default function App() {
   const [showHistory, setShowHistory] = useState(false);
   const [history, setHistory] = useState([]);
   const [currentHistoryId, setCurrentHistoryId] = useState(null);
+
+  // ── Refs sync ──
+  isGeneratingRef.current = isGenerating;
+
+  // ── Persist to localStorage ──
+  useEffect(() => {
+    if (!pages || pages.length === 0) return;
+    try {
+      const data = {
+        pages,
+        projectName,
+        contentDesc,
+        selectedStyles,
+        styleDesc,
+        timestamp: Date.now(),
+      };
+      const json = JSON.stringify(data);
+      // Skip if over 2MB to avoid quota issues
+      if (json.length < 2 * 1024 * 1024) {
+        localStorage.setItem(STORAGE_KEY, json);
+      }
+    } catch (e) { /* quota exceeded — ignore */ }
+  }, [pages, projectName, contentDesc, selectedStyles, styleDesc]);
 
   // ── Theme & Style ──
 
@@ -134,13 +214,17 @@ export default function App() {
     if (!plannedPages || plannedPages.length === 0) return;
 
     setIsGenerating(true);
+    isGeneratingRef.current = true;
     setGenerateError('');
     setProgressCurrent(0);
     setProgressTotal(plannedPages.length);
     setPages([]);
     setCurrentPageIndex(0);
-    setUserSelectedPage(false);
+    userSelectedPageRef.current = false;
     // Keep plannedPages visible — user can track each page's progress
+
+    // Local counter for accurate progress tracking across parallel completions
+    let completedCount = 0;
 
     try {
       const providerConfig = aiConfig[activeProvider] || {};
@@ -149,20 +233,20 @@ export default function App() {
         contentDesc, [], selectedStyles, styleDesc,
         (msg) => setGenerateProgress(msg),
         (pageResult, index, total) => {
-          setProgressCurrent(index + 1);
+          completedCount++;
+          setProgressCurrent(completedCount);
           setPages((prev) => {
             const next = [...prev];
             next[index] = pageResult;
             return next;
           });
-          // Don't override user's manual page selection
-          if (!userSelectedPage) {
-            setCurrentPageIndex(index);
-          }
+          // Do NOT auto-switch currentPageIndex during parallel generation
+          // to prevent iframe from thrashing between different HTML documents.
+          // User can manually click page tabs to preview completed pages.
         }
       );
 
-      // Final state
+      // Final state — switch to first page after all pages are done
       setPages(result.pages);
       if (result.pages.length > 0) {
         setCurrentPageIndex(0);
@@ -186,13 +270,14 @@ export default function App() {
       setGenerateError(err.message || '生成失败，请检查 AI 模型配置');
     } finally {
       setIsGenerating(false);
+      isGeneratingRef.current = false;
       setGenerateProgress('');
       setProgressCurrent(0);
       setProgressTotal(0);
       setPlannedPages(null); // now hide plan, generation is done
-      setUserSelectedPage(false);
+      userSelectedPageRef.current = false;
     }
-  }, [plannedPages, plannedStyleSpec, contentDesc, selectedStyles, styleDesc, aiConfig, activeProvider, userSelectedPage]);
+  }, [plannedPages, plannedStyleSpec, contentDesc, selectedStyles, styleDesc, aiConfig, activeProvider]);
 
   // Cancel plan
   const handleCancelPlan = useCallback(() => {
@@ -457,6 +542,7 @@ export default function App() {
         onToggleTheme={toggleTheme}
       />
 
+      <ErrorBoundary>
       <div className="workspace">
         <LeftPanel
           contentDesc={contentDesc}
@@ -496,11 +582,17 @@ export default function App() {
           currentPageIndex={currentPageIndex}
           onPageChange={(index) => {
             setCurrentPageIndex(index);
-            setCode(pages[index]?.html || '');
+            // During generation, don't update code (panel is hidden anyway).
+            // After generation, use functional update for latest pages.
+            if (!isGeneratingRef.current) {
+              setPages((current) => {
+                setCode(current[index]?.html || '');
+                return current;
+              });
+            }
             setMessages([]);
-            if (isGenerating) setUserSelectedPage(true);
           }}
-          onUserSelectPage={() => setUserSelectedPage(true)}
+          onUserSelectPage={() => { userSelectedPageRef.current = true; }}
           isRefining={isRefining}
           isRegenerating={isRegenerating}
           onRegeneratePage={handleRegeneratePage}
@@ -514,6 +606,7 @@ export default function App() {
           }
         />
       </div>
+      </ErrorBoundary>
 
       {showSettings && (
         <AISettingsModal

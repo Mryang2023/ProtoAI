@@ -113,7 +113,7 @@ export default function LeftPanel({
                 const pageData = pages?.[i];
                 const isDone = pageData?.html && !pageData?.error;
                 const isFailed = pageData?.error;
-                const isCurrent = isGenerating && !isDone && !isFailed && (i === (pages?.filter(Boolean).length || 0));
+                const isCurrent = isGenerating && !isDone && !isFailed;
                 return (
                   <div key={i} className={`plan-page-item${isDone ? ' done' : ''}${isCurrent ? ' generating' : ''}${isFailed ? ' failed' : ''}`}>
                     <span className={`plan-page-index${isDone ? ' done' : ''}${isCurrent ? ' generating' : ''}${isFailed ? ' failed' : ''}`}>

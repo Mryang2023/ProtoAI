@@ -381,7 +381,7 @@ export default function App() {
 
   const handleExportAll = useCallback(async () => {
     try {
-      const validPages = pages.filter((p) => p.html);
+      const validPages = pages.filter((p) => p?.html);
       if (validPages.length === 0) return;
       if (validPages.length === 1) { handleExport(); return; }
 
@@ -434,7 +434,7 @@ export default function App() {
 
   const handleExportAllImages = useCallback(async () => {
     try {
-      const validPages = pages.filter((p) => p.html);
+      const validPages = pages.filter((p) => p?.html);
       if (validPages.length === 0) return;
       if (validPages.length === 1) { await handleExportImage(); return; }
 
@@ -470,7 +470,7 @@ export default function App() {
   const handleExportHistory = useCallback((entry, type) => {
     try {
       if (!entry?.pages) return;
-      const validPages = entry.pages.filter((p) => p.html);
+      const validPages = entry.pages.filter((p) => p?.html);
       if (validPages.length === 0) return;
 
       if (type === 'html' && validPages.length === 1) {
@@ -540,7 +540,7 @@ export default function App() {
         onOpenHistory={() => setShowHistory(true)}
         onExport={handleExport}
         onExportAll={handleExportAll}
-        hasMultiplePages={pages.filter((p) => p.html).length > 1}
+        hasMultiplePages={pages.filter((p) => p?.html).length > 1}
         theme={theme}
         onToggleTheme={toggleTheme}
       />

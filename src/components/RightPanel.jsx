@@ -19,7 +19,7 @@ export default function RightPanel({
   const [userPreviewIndex, setUserPreviewIndex] = useState(null);
   const exportRef = useRef(null);
 
-  const hasMultiplePages = pages.filter((p) => p.html).length > 1;
+  const hasMultiplePages = pages.filter((p) => p?.html).length > 1;
 
   // Reset local preview when generation finishes
   useEffect(() => {

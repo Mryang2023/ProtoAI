@@ -71,6 +71,10 @@ export default function App() {
       if (saved) {
         const data = JSON.parse(saved);
         if (data.pages?.length > 0 && (Date.now() - (data.timestamp || 0) < 72 * 3600 * 1000)) {
+          // Filter out null/undefined entries from sparse arrays saved during parallel generation
+          if (data.pages) {
+            data.pages = data.pages.filter(Boolean);
+          }
           return data;
         }
       }
@@ -161,8 +165,11 @@ export default function App() {
   useEffect(() => {
     if (!pages || pages.length === 0) return;
     try {
+      // Filter out null/undefined entries from sparse arrays during parallel generation
+      const validPages = pages.filter(Boolean);
+      if (validPages.length === 0) return;
       const data = {
-        pages,
+        pages: validPages,
         projectName,
         contentDesc,
         selectedStyles,
@@ -256,10 +263,11 @@ export default function App() {
     let completedCount = 0;
 
     try {
+      const fileContents = uploadedFiles.length > 0 ? await readFileContents(uploadedFiles) : [];
       const providerConfig = aiConfig[activeProvider] || {};
       const result = await generateProjectPages(
         activeProvider, providerConfig, plannedPages, plannedStyleSpec,
-        contentDesc, [], selectedStyles, styleDesc,
+        contentDesc, fileContents, selectedStyles, styleDesc,
         (msg) => setGenerateProgress(msg),
         (pageResult, index, total) => {
           completedCount++;
@@ -306,7 +314,7 @@ export default function App() {
       setPlannedPages(null); // now hide plan, generation is done
       userSelectedPageRef.current = false;
     }
-  }, [plannedPages, plannedStyleSpec, contentDesc, selectedStyles, styleDesc, aiConfig, activeProvider]);
+  }, [plannedPages, plannedStyleSpec, contentDesc, selectedStyles, styleDesc, aiConfig, activeProvider, uploadedFiles]);
 
   // Cancel plan
   const handleCancelPlan = useCallback(() => {
@@ -490,7 +498,7 @@ export default function App() {
 
   const handleExportAllImages = useCallback(async () => {
     try {
-      const validPages = pages.filter((p) => p?.html);
+      const validPages = pages.map((p, i) => ({ page: p, originalIndex: i })).filter(({ page }) => page?.html);
       if (validPages.length === 0) return;
       if (validPages.length === 1) { await handleExportImage(); return; }
 
@@ -500,11 +508,11 @@ export default function App() {
       for (let i = 0; i < validPages.length; i++) {
         setGenerateProgress(`正在生成图片 ${i + 1}/${validPages.length}...`);
         try {
-          const blob = await capturePageAsImage(validPages[i].html, 1440, 900);
+          const blob = await capturePageAsImage(validPages[i].page.html, 1440, 900);
           const arrayBuf = await blob.arrayBuffer();
-          zip.file(pageFileName(validPages[i], i).replace('.html', '.png'), arrayBuf);
+          zip.file(pageFileName(validPages[i].page, validPages[i].originalIndex).replace('.html', '.png'), arrayBuf);
         } catch (err) {
-          console.warn(`Failed to capture page ${validPages[i].name}:`, err);
+          console.warn(`Failed to capture page ${validPages[i].page.name}:`, err);
         }
       }
 

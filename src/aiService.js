@@ -310,30 +310,49 @@ export function pageFileName(page, index) {
 
 /**
  * Inject a unified navigation bar into each page's HTML so pages link to each other.
+ * The nav is placed at the TOP of the page with position:fixed for always-visible access.
  * Only runs for multi-page projects.
  */
 function injectNavigation(pages) {
   if (pages.length <= 1) return pages;
 
-  const links = pages.map((p, i) => {
-    const fn = pageFileName(p, i);
-    return `<a href="${fn}" style="text-decoration:none;color:inherit;padding:6px 14px;border-radius:6px;font-size:14px;font-weight:500;transition:all .15s;">${p.name}</a>`;
-  }).join('\n        ');
-
-  const navHtml = `
-  <nav style="display:flex;align-items:center;gap:4px;padding:12px 24px;background:#fff;border-bottom:1px solid #e5e7eb;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;position:sticky;top:0;z-index:100;">
-    <span style="font-weight:700;font-size:15px;margin-right:16px;color:#111;">ProtoAI</span>
-    ${links}
-  </nav>`;
-
-  return pages.map((p) => {
+  return pages.map((p, currentPageIndex) => {
     if (!p.html) return p;
     let html = p.html;
-    if (html.includes('</body>')) {
+
+    // Build links with current page highlighted
+    const links = pages.map((page, i) => {
+      const fn = pageFileName(page, i);
+      const isCurrent = i === currentPageIndex;
+      if (isCurrent) {
+        return `<a href="${fn}" style="text-decoration:none;color:#2563eb;padding:6px 14px;border-radius:6px;font-size:14px;font-weight:600;background:rgba(37,99,235,0.08);">${page.name}</a>`;
+      }
+      return `<a href="${fn}" style="text-decoration:none;color:#555;padding:6px 14px;border-radius:6px;font-size:14px;font-weight:500;transition:all .15s;" onmouseover="this.style.background='#f0f0f0';this.style.color='#111'" onmouseout="this.style.background='transparent';this.style.color='#555'">${page.name}</a>`;
+    }).join('\n        ');
+
+    // Fixed nav bar at the top — always visible regardless of scroll position
+    const navHtml = `
+  <nav style="position:fixed;top:0;left:0;right:0;z-index:99999;display:flex;align-items:center;gap:4px;padding:10px 24px;background:#ffffff;border-bottom:1px solid #e5e7eb;box-shadow:0 2px 8px rgba(0,0,0,0.08);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
+    <span style="font-weight:700;font-size:15px;margin-right:16px;color:#111;white-space:nowrap;">ProtoAI</span>
+    <div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap;">
+      ${links}
+    </div>
+  </nav>
+  <div style="height:52px;"></div>`;
+
+    // Insert at the TOP of the page body (not the bottom) for immediate visibility
+    if (html.includes('<body>')) {
+      html = html.replace('<body>', `<body>${navHtml}`);
+    } else if (/<body\s[^>]*>/.test(html)) {
+      html = html.replace(/<body\s[^>]*>/, (match) => `${match}${navHtml}`);
+    } else if (html.includes('</body>')) {
+      // Fallback: insert before </body> if no opening <body> found
       html = html.replace('</body>', `${navHtml}\n</body>`);
     } else {
-      html += navHtml;
+      // Last resort: prepend to HTML
+      html = navHtml + '\n' + html;
     }
+
     return { ...p, html };
   });
 }
@@ -526,14 +545,6 @@ function buildContextPrompt(contentDesc, fileContents, selectedStyles, styleDesc
  */
 export async function htmlToImage(htmlString, width = 1440, height = 900) {
   return new Promise((resolve, reject) => {
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">
-      <foreignObject width="100%" height="100%">
-        <div xmlns="http://www.w3.org/1999/xhtml" style="width:${width}px;height:${height}px;overflow:hidden;">
-          <iframe id="__capture" style="width:${width}px;height:${height}px;border:none;" sandbox="allow-same-origin"></iframe>
-        </div>
-      </foreignObject>
-    </svg>`;
-
     // Use iframe approach for reliable rendering
     const iframe = document.createElement('iframe');
     iframe.style.cssText = `position:fixed;left:-${width + 100}px;top:0;width:${width}px;height:${height}px;border:none;visibility:hidden;`;

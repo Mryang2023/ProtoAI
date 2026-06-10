@@ -138,6 +138,7 @@ export default function RightPanel({
       {(pages.filter((p) => p?.html).length > 1 || (isGenerating && plannedPages && plannedPages.length > 1)) && (
         <div className="page-nav" data-component="Page Navigation" data-od-id="page-nav">
           {(plannedPages || pages).map((page, i) => {
+            if (!page) return null; // Guard against null entries from sparse arrays
             const pageData = pages[i];
             const isDone = pageData?.html && !pageData?.error;
             const isCurrent = isGenerating && userPreviewIndex !== null

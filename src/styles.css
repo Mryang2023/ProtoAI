@@ -2145,7 +2145,7 @@ body {
 .spinner-small {
   width: 20px;
   height: 20px;
-  border: 2px var(--border-light);
+  border: 2px solid var(--border-light);
   border-top-color: var(--accent);
   border-radius: 50%;
   animation: spin 0.7s linear infinite;

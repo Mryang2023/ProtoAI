@@ -293,6 +293,19 @@ export async function planProject(provider, config, contentDesc, fileContents, s
   };
 }
 
+// ── Shared filename helper ──────────────────────────────
+
+/**
+ * Generate a consistent filename for a page's HTML file.
+ * Used by both injectNavigation() and the ZIP export to ensure links match files.
+ */
+export function pageFileName(page, index) {
+  const safe = (page.name || 'page')
+    .replace(/[\\/:*?"<>|]/g, '_')
+    .replace(/\s+/g, '_');
+  return `${String(index + 1).padStart(2, '0')}_${safe}.html`;
+}
+
 // ── Navigation Injection ──────────────────────────────
 
 /**
@@ -303,7 +316,7 @@ function injectNavigation(pages) {
   if (pages.length <= 1) return pages;
 
   const links = pages.map((p, i) => {
-    const fn = `${String(i + 1).padStart(2, '0')}_${p.name.replace(/[^a-zA-Z0-9\u4e00-\u9fa5]/g, '_')}.html`;
+    const fn = pageFileName(p, i);
     return `<a href="${fn}" style="text-decoration:none;color:inherit;padding:6px 14px;border-radius:6px;font-size:14px;font-weight:500;transition:all .15s;">${p.name}</a>`;
   }).join('\n        ');
 

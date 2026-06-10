@@ -300,26 +300,37 @@ function injectNavigation(pages) {
 
 /**
  * Phase 2: Generate HTML for each planned page.
- * Calls onPageGenerated for incremental UI updates.
+ * Pages are generated in PARALLEL for speed — all AI calls fire at once.
+ * Calls onPageGenerated as each page completes.
  */
 export async function generateProjectPages(provider, config, plannedPages, styleSpec, contentDesc, fileContents, selectedStyles, styleDesc, onProgress, onPageGenerated) {
   if (!config?.apiKey) throw new Error('请先在设置中配置 AI 模型的 API Key');
 
-  const results = [];
-  for (let i = 0; i < plannedPages.length; i++) {
-    const page = plannedPages[i];
-    onProgress?.(`正在生成第 ${i + 1}/${plannedPages.length} 页「${page.name}」...`);
+  // Pre-allocate results array to preserve page order
+  const results = new Array(plannedPages.length);
+  const completed = new Set();
+
+  onProgress?.(`正在并行生成 ${plannedPages.length} 个页面...`);
+
+  // Fire all page generations concurrently
+  const promises = plannedPages.map(async (page, i) => {
     try {
       const html = await generateSinglePage(provider, config, page, styleSpec, contentDesc, fileContents, selectedStyles, styleDesc, plannedPages);
       const result = { ...page, html };
-      results.push(result);
+      results[i] = result;
+      completed.add(i);
+      onProgress?.(`已完成 ${completed.size}/${plannedPages.length} 页`);
       onPageGenerated?.(result, i, plannedPages.length);
     } catch (err) {
       const result = { ...page, html: '', error: err.message };
-      results.push(result);
+      results[i] = result;
+      completed.add(i);
+      onProgress?.(`已完成 ${completed.size}/${plannedPages.length} 页`);
       onPageGenerated?.(result, i, plannedPages.length);
     }
-  }
+  });
+
+  await Promise.allSettled(promises);
 
   // Inject cross-page navigation for multi-page projects
   const finalPages = injectNavigation(results);

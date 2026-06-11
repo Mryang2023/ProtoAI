@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback } from 'react';
-import { Sparkles, FileText, Palette, Bot, Check, X, LayoutList, Trash2, Play, Monitor, Smartphone, ChevronDown, Plus, RotateCcw, Eye } from 'lucide-react';
+import { Sparkles, FileText, Palette, Bot, Check, X, LayoutList, Trash2, Play, Monitor, Smartphone, ChevronDown, Plus, RotateCcw, Eye, Zap, Loader2, CheckCircle2, AlertCircle, ArrowRight } from 'lucide-react';
 import StyleTags from './StyleTags.jsx';
 import FileUpload from './FileUpload.jsx';
 
@@ -27,7 +27,11 @@ export default function LeftPanel({
   onViewPlan,
   onViewPagePrototype,
   onRegeneratePage,
+  onGenerateSinglePage,
   isRegenerating,
+  regeneratingPageIndex,
+  progressCurrent,
+  progressTotal,
 }) {
   const [panelWidth, setPanelWidth] = useState(400);
   const [stylesExpanded, setStylesExpanded] = useState(false);
@@ -51,6 +55,12 @@ export default function LeftPanel({
   }, [panelWidth]);
 
   const hasInput = contentDesc.trim() || files.length > 0;
+
+  // Compute generation stats
+  const generatedCount = pages?.filter(p => p?.html && !p?.error).length || 0;
+  const failedCount = pages?.filter(p => p?.error).length || 0;
+  const totalPlanned = plannedPages?.length || 0;
+  const allDone = totalPlanned > 0 && generatedCount + failedCount >= totalPlanned && !isGenerating;
 
   return (
     <aside
@@ -135,7 +145,7 @@ export default function LeftPanel({
             <div className="panel-section-header">
               <LayoutList size={14} style={{ color: isGenerating ? 'var(--fg-muted)' : 'var(--accent)' }} />
               <span className="section-label" style={{ color: isGenerating ? 'var(--fg-muted)' : 'var(--accent)' }}>
-                {isGenerating ? '生成进度' : '页面方案'}
+                {isGenerating ? '生成进度' : allDone ? '生成结果' : '页面方案'}
               </span>
               <span style={{
                 marginLeft: 'auto',
@@ -153,60 +163,145 @@ export default function LeftPanel({
                 {detectedPlatform === 'mobile' ? '移动端' : 'PC端'}
               </span>
             </div>
-            {!isGenerating && (
+
+            {/* Progress bar during batch generation */}
+            {isGenerating && progressTotal > 0 && (
+              <div className="gen-progress-bar">
+                <div className="gen-progress-track">
+                  <div
+                    className="gen-progress-fill"
+                    style={{ width: `${Math.round((progressCurrent / progressTotal) * 100)}%` }}
+                  />
+                </div>
+                <span className="gen-progress-text">
+                  {progressCurrent}/{progressTotal} 页已完成
+                </span>
+              </div>
+            )}
+
+            {/* Summary stats after generation */}
+            {allDone && totalPlanned > 0 && (
+              <div className="gen-result-stats">
+                <span className="gen-stat">
+                  <CheckCircle2 size={12} style={{ color: 'var(--success)' }} />
+                  {generatedCount} 页已生成
+                </span>
+                {failedCount > 0 && (
+                  <span className="gen-stat gen-stat-fail">
+                    <AlertCircle size={12} style={{ color: 'var(--danger)' }} />
+                    {failedCount} 页失败
+                  </span>
+                )}
+                <button
+                  className="gen-view-all-btn"
+                  onClick={() => onViewPagePrototype && onViewPagePrototype(0)}
+                >
+                  查看全部 <ArrowRight size={12} />
+                </button>
+              </div>
+            )}
+
+            {!isGenerating && !allDone && (
               <p className="section-hint">{plannedPages.length} 个页面 · 点击页面名称查看原型</p>
             )}
+
             <div className="plan-pages-list">
               {plannedPages.map((page, i) => {
                 const pageData = pages?.[i];
                 const isDone = pageData?.html && !pageData?.error;
                 const isFailed = pageData?.error;
-                const isCurrent = isGenerating && !isDone && !isFailed;
-                const isActive = !isGenerating && rightViewMode === 'prototype' && isDone;
+                const isBatchGenerating = isGenerating && !isDone && !isFailed;
+                const isSingleGenerating = isRegenerating && regeneratingPageIndex === i;
+                const isActive = rightViewMode === 'prototype' && (isDone || isSingleGenerating);
+                const canGenerateSingle = !isGenerating && !isRegenerating && !isDone && rightViewMode !== 'plan';
+
                 return (
                   <div
                     key={i}
-                    className={`plan-page-item${isDone ? ' done' : ''}${isCurrent ? ' generating' : ''}${isFailed ? ' failed' : ''}${isActive ? ' active-prototype' : ''}`}
+                    className={`plan-page-item${isDone ? ' done' : ''}${isBatchGenerating ? ' generating' : ''}${isFailed ? ' failed' : ''}${isActive ? ' active-prototype' : ''}${isSingleGenerating ? ' single-generating' : ''}`}
                     onClick={() => {
                       if (isDone && onViewPagePrototype) onViewPagePrototype(i);
                     }}
                     style={isDone && onViewPagePrototype ? { cursor: 'pointer' } : undefined}
                   >
-                    <span className={`plan-page-index${isDone ? ' done' : ''}${isCurrent ? ' generating' : ''}${isFailed ? ' failed' : ''}`}>
-                      {isDone ? '✓' : isFailed ? '✗' : i + 1}
+                    {/* Status indicator */}
+                    <span className={`plan-page-index${isDone ? ' done' : ''}${isBatchGenerating || isSingleGenerating ? ' generating' : ''}${isFailed ? ' failed' : ''}`}>
+                      {isDone ? '✓' : isFailed ? '✗' : isSingleGenerating ? (
+                        <Loader2 size={12} className="spin-animation" />
+                      ) : i + 1}
                     </span>
+
+                    {/* Page info */}
                     <div className="plan-page-info">
                       <span className="plan-page-name">{page.name}</span>
                       {page.description && <span className="plan-page-desc">{page.description}</span>}
                     </div>
-                    {isCurrent && <span className="plan-page-status">生成中...</span>}
+
+                    {/* Batch generating status */}
+                    {isBatchGenerating && <span className="plan-page-status">等待中</span>}
+
+                    {/* Single page generating */}
+                    {isSingleGenerating && <span className="plan-page-status generating">生成中...</span>}
+
+                    {/* Done: action buttons */}
                     {isDone && !isGenerating && (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                      <div className="plan-page-actions">
                         <button
-                          className="btn btn-icon btn-sm"
+                          className="btn btn-icon btn-sm plan-page-action"
                           onClick={(e) => { e.stopPropagation(); if (onViewPlan) onViewPlan(); }}
-                          title="查看方案"
-                          style={{ color: 'var(--fg-muted)', padding: 2 }}
+                          title="查看方案线框"
                         >
                           <Eye size={12} />
                         </button>
                         <button
-                          className="btn btn-icon btn-sm"
-                          onClick={(e) => { e.stopPropagation(); if (onRegeneratePage) onRegeneratePage(); }}
+                          className="btn btn-icon btn-sm plan-page-action"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (onRegeneratePage) onRegeneratePage(i);
+                          }}
                           disabled={isRegenerating}
-                          title="重新生成"
-                          style={{ color: 'var(--fg-muted)', padding: 2 }}
+                          title="重新生成此页面"
                         >
                           <RotateCcw size={12} />
                         </button>
                       </div>
                     )}
-                    {isDone && isGenerating && <span className="plan-page-status done">已完成</span>}
-                    {isFailed && <span className="plan-page-status failed">失败</span>}
+
+                    {/* Failed: retry button */}
+                    {isFailed && !isGenerating && (
+                      <button
+                        className="btn btn-icon btn-sm plan-page-action plan-page-retry"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (onGenerateSinglePage) onGenerateSinglePage(i);
+                        }}
+                        disabled={isRegenerating}
+                        title="重新生成"
+                      >
+                        <RotateCcw size={12} />
+                      </button>
+                    )}
+
+                    {/* Not yet generated: generate button (visible after batch or in non-plan view) */}
+                    {canGenerateSingle && (
+                      <button
+                        className="btn btn-icon btn-sm plan-page-action plan-page-generate"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (onGenerateSinglePage) onGenerateSinglePage(i);
+                        }}
+                        disabled={isRegenerating}
+                        title="生成此页面"
+                      >
+                        <Zap size={12} />
+                      </button>
+                    )}
                   </div>
                 );
               })}
             </div>
+
+            {/* Confirm / Cancel buttons (plan mode only, not generating) */}
             {!isGenerating && rightViewMode === 'plan' && (
               <div className="plan-actions">
                 <button className="btn btn-primary plan-confirm-btn" onClick={onConfirmPlan}>

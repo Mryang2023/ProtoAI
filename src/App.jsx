@@ -9,7 +9,7 @@ import AISettingsModal from './components/AISettingsModal.jsx';
 import VersionHistory from './components/VersionHistory.jsx';
 import PlansHistoryModal from './components/PlansHistoryModal.jsx';
 import { generateAllWireframes } from './components/PlanPreview.jsx';
-import { planProject, generateProjectPages, readFileContents, capturePageAsImage, refinePage, regenerateSinglePage, buildStyleSpec, pageFileName } from './aiService.js';
+import { planProject, generateProjectPages, generateSinglePage, readFileContents, capturePageAsImage, refinePage, regenerateSinglePage, buildStyleSpec, pageFileName } from './aiService.js';
 
 const BUILTIN_PROVIDER_NAMES = { openai: 'OpenAI', claude: 'Claude', custom: 'Mimo' };
 
@@ -216,6 +216,7 @@ export default function App() {
   const [messages, setMessages] = useState([]);
   const [isRefining, setIsRefining] = useState(false);
   const [isRegenerating, setIsRegenerating] = useState(false);
+  const [regeneratingPageIndex, setRegeneratingPageIndex] = useState(null);
 
   // AI settings — pre-configured with default model
   const [showSettings, setShowSettings] = useState(false);
@@ -597,10 +598,12 @@ export default function App() {
 
   // ── Single Page Regeneration ──
 
-  const handleRegeneratePage = useCallback(async () => {
-    if (isRegenerating || !pages[currentPageIndex]) return;
-    const page = pages[currentPageIndex];
+  const handleRegeneratePage = useCallback(async (pageIndex) => {
+    const targetIndex = typeof pageIndex === 'number' ? pageIndex : currentPageIndex;
+    if (isRegenerating || !pages[targetIndex]) return;
+    const page = pages[targetIndex];
     setIsRegenerating(true);
+    setRegeneratingPageIndex(targetIndex);
     setGenerateProgress(`正在重新生成「${page.name}」...`);
 
     try {
@@ -614,17 +617,66 @@ export default function App() {
       const html = result.html || '';
       setPages((prev) => {
         const next = [...prev];
-        next[currentPageIndex] = { ...next[currentPageIndex], html, error: null };
+        next[targetIndex] = { ...next[targetIndex], html, error: null };
         return next;
       });
-      setCode(html);
+      // If regenerating the currently viewed page, sync code
+      if (targetIndex === currentPageIndex) {
+        setCode(html);
+      }
+      // Auto-jump to the regenerated page prototype
+      setCurrentPageIndex(targetIndex);
+      setRightViewMode('prototype');
     } catch (err) {
       setGenerateError(`重新生成失败：${err.message}`);
     } finally {
       setIsRegenerating(false);
+      setRegeneratingPageIndex(null);
       setGenerateProgress('');
     }
   }, [isRegenerating, pages, currentPageIndex, aiConfig, activeProvider, contentDesc, selectedStyles, styleDesc, plannedStyleSpec, uploadedFiles, detectedPlatform]);
+
+  // ── Generate single page from plan ──
+
+  const handleGenerateSinglePage = useCallback(async (pageIndex) => {
+    if (!plannedPages || isRegenerating || isGenerating) return;
+    const planPage = plannedPages[pageIndex];
+    if (!planPage) return;
+
+    setIsRegenerating(true);
+    setRegeneratingPageIndex(pageIndex);
+    setGenerateProgress(`正在生成「${planPage.name}」...`);
+
+    try {
+      const providerConfig = aiConfig[activeProvider] || {};
+      const fileContents = uploadedFiles.length > 0 ? await readFileContents(uploadedFiles) : [];
+      const styleSpec = plannedStyleSpec || buildStyleSpec(selectedStyles, styleDesc);
+      // Use plannedPages as the allPages reference for navigation links
+      const result = await generateSinglePage(
+        activeProvider, providerConfig, planPage, styleSpec,
+        contentDesc, fileContents, selectedStyles, styleDesc, plannedPages, detectedPlatform
+      );
+      const html = result.html || '';
+      // Store the generated page result
+      setPages((prev) => {
+        const next = [...prev];
+        // Ensure array is long enough
+        while (next.length <= pageIndex) next.push(null);
+        next[pageIndex] = { ...planPage, html, error: null };
+        return next;
+      });
+      // Auto-jump to the generated page prototype
+      setCurrentPageIndex(pageIndex);
+      setCode(html);
+      setRightViewMode('prototype');
+    } catch (err) {
+      setGenerateError(`生成失败：${err.message}`);
+    } finally {
+      setIsRegenerating(false);
+      setRegeneratingPageIndex(null);
+      setGenerateProgress('');
+    }
+  }, [plannedPages, isRegenerating, isGenerating, aiConfig, activeProvider, contentDesc, selectedStyles, styleDesc, plannedStyleSpec, uploadedFiles, detectedPlatform]);
 
   // ── Export: Current Page HTML ──
 
@@ -847,7 +899,11 @@ export default function App() {
           onViewPlan={handleViewPlan}
           onViewPagePrototype={handleViewPagePrototype}
           onRegeneratePage={handleRegeneratePage}
+          onGenerateSinglePage={handleGenerateSinglePage}
           isRegenerating={isRegenerating}
+          regeneratingPageIndex={regeneratingPageIndex}
+          progressCurrent={progressCurrent}
+          progressTotal={progressTotal}
         />
 
         <RightPanel

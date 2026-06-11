@@ -2014,6 +2014,144 @@ body {
   background: color-mix(in srgb, var(--accent) 8%, var(--surface));
 }
 
+/* Single page generating state */
+.plan-page-item.single-generating {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 6%, var(--surface));
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+/* Generation progress bar in left panel */
+.gen-progress-bar {
+  margin-top: var(--sp-2);
+  margin-bottom: var(--sp-1);
+}
+
+.gen-progress-track {
+  width: 100%;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--bg-hover);
+  overflow: hidden;
+}
+
+.gen-progress-fill {
+  height: 100%;
+  border-radius: 3px;
+  background: linear-gradient(90deg, var(--accent), color-mix(in srgb, var(--accent) 70%, #22d3ee));
+  transition: width 0.4s ease;
+}
+
+.gen-progress-text {
+  display: block;
+  font-size: 11px;
+  color: var(--fg-muted);
+  margin-top: 4px;
+  font-weight: 500;
+}
+
+/* Generation result stats */
+.gen-result-stats {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  margin-top: var(--sp-2);
+  margin-bottom: var(--sp-1);
+  flex-wrap: wrap;
+}
+
+.gen-stat {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--fg-muted);
+}
+
+.gen-stat-fail {
+  color: var(--danger);
+}
+
+.gen-view-all-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  margin-left: auto;
+  transition: all var(--duration-fast) var(--ease-default);
+}
+
+.gen-view-all-btn:hover {
+  background: var(--accent-subtle);
+}
+
+/* Plan page action buttons */
+.plan-page-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+.plan-page-action {
+  color: var(--fg-muted) !important;
+  padding: 3px !important;
+  border-radius: 4px !important;
+  transition: all var(--duration-fast) var(--ease-default) !important;
+}
+
+.plan-page-action:hover:not(:disabled) {
+  color: var(--accent) !important;
+  background: var(--accent-subtle) !important;
+}
+
+.plan-page-action:disabled {
+  opacity: 0.4;
+  cursor: not-allowed !important;
+}
+
+.plan-page-generate {
+  color: var(--accent) !important;
+}
+
+.plan-page-generate:hover:not(:disabled) {
+  color: var(--accent) !important;
+  background: var(--accent-subtle) !important;
+}
+
+.plan-page-retry {
+  color: var(--danger) !important;
+}
+
+.plan-page-retry:hover:not(:disabled) {
+  color: var(--danger) !important;
+  background: color-mix(in srgb, var(--danger) 8%, transparent) !important;
+}
+
+/* Generating status text variant */
+.plan-page-status.generating {
+  color: var(--accent);
+}
+
+/* Spin animation for Loader2 icon */
+.spin-animation {
+  animation: spin-anim 1s linear infinite;
+}
+
+@keyframes spin-anim {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
 /* ============================================
    View Mode Tabs (Right Panel)
    ============================================ */

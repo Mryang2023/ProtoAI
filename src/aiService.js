@@ -518,7 +518,7 @@ export async function generateProjectPages(provider, config, plannedPages, style
   return { pages: finalPages };
 }
 
-async function generateSinglePage(provider, config, page, styleSpec, contentDesc, fileContents, selectedStyles, styleDesc, allPages, platform = 'pc') {
+export async function generateSinglePage(provider, config, page, styleSpec, contentDesc, fileContents, selectedStyles, styleDesc, allPages, platform = 'pc') {
   const platSpec = PLATFORM_SPECS[platform] || PLATFORM_SPECS.pc;
 
   const systemPrompt = `你是一个专业的 HTML/CSS 原型生成器。用户会给你单个页面的需求描述和全局设计规范，你需要生成一个完整、可直接运行的单页 HTML 文件。

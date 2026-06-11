@@ -10,7 +10,7 @@
 // Re-export everything for backward compatibility with existing imports
 export { callAI, callAIStream, callOpenAICompatible, callClaude, streamOpenAICompatible, streamClaude } from './providers.js';
 
-export { planProject } from './planning.js';
+export { planProject, parsePartialPlan } from './planning.js';
 
 export {
   buildStyleSpec,

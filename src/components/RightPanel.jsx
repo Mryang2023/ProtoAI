@@ -3,7 +3,7 @@ import {
   Monitor, Tablet, Smartphone, RefreshCw, ZoomIn, ZoomOut,
   Download, FileDown, Archive, Image, Images,
   Sparkles, AlertCircle, ChevronDown, CheckCircle2, ArrowLeft, RotateCcw,
-  Layers, Play, Eye,
+  Layers, Eye, Brain, FileText, Route, Loader2,
 } from 'lucide-react';
 
 export default function RightPanel({
@@ -16,6 +16,9 @@ export default function RightPanel({
   rightViewMode = 'prototype', wireframeHtmls = [],
   onViewModeChange,
   streamingHtml = '',
+  planningStreamText = '',
+  planningDiscoveredPages = [],
+  planningPhase = '',
 }) {
   const [device, setDevice] = useState('desktop');
   const [zoom, setZoom] = useState(100);
@@ -84,6 +87,10 @@ export default function RightPanel({
   const showProgressDuringGen = isGenerating && !previewHtml;
   const showPlanMode = rightViewMode === 'plan' && !isGenerating && currentWireframeHtml;
   const showPrototypeMode = rightViewMode === 'prototype' || isGenerating;
+
+  // Show planning analysis view when actively planning (before page generation starts)
+  const showPlanningView = isGenerating && planningPhase && planningPhase !== 'complete'
+    && (!plannedPages || plannedPages.length === 0 || !progressTotal);
 
   return (
     <div className="right-panel" data-component="Right Panel" data-od-id="right-panel">
@@ -160,6 +167,25 @@ export default function RightPanel({
                   <ArrowLeft size={12} />返回进度
                 </button>
               )}
+            </div>
+          )}
+
+          {/* Compact planning indicator (shows before progress bar during planning) */}
+          {showPlanningView && (
+            <div className="compact-progress-bar" style={{ background: 'color-mix(in srgb, var(--accent) 4%, transparent)' }}>
+              <div className="compact-progress-track">
+                <div className="compact-progress-fill" style={{ width: '30%', background: 'linear-gradient(90deg, var(--accent), #8b5cf6)', animation: 'planningProgressPulse 2s ease-in-out infinite' }} />
+              </div>
+              <span className="compact-progress-text compact-progress-planning">
+                <Loader2 size={12} className="planning-stream-spin" />
+                {planningPhase === 'thinking' && '正在理解需求...'}
+                {planningPhase === 'planning' && '正在规划页面结构...'}
+                {planningPhase === 'detailing' && `已发现 ${planningDiscoveredPages.length} 个页面，细化中...`}
+                {!planningPhase && '正在启动规划...'}
+                {planningDiscoveredPages.length > 0 && (
+                  <span style={{ marginLeft: 6, opacity: 0.6 }}>{planningDiscoveredPages.map(p => p.name).join(' · ')}</span>
+                )}
+              </span>
             </div>
           )}
 
@@ -257,6 +283,12 @@ export default function RightPanel({
           <div className="preview-frame-container">
             {error ? (
               <ErrorState message={error} />
+            ) : showPlanningView ? (
+              <PlanningAnalysisView
+                phase={planningPhase}
+                discoveredPages={planningDiscoveredPages}
+                streamText={planningStreamText}
+              />
             ) : showProgressDuringGen ? (
               <ProgressState
                 progress={progress}
@@ -295,6 +327,167 @@ export default function RightPanel({
       )}
     </div>
   );
+}
+
+function PlanningAnalysisView({ phase, discoveredPages, streamText }) {
+  const streamEndRef = useRef(null);
+  const [showRawDetail, setShowRawDetail] = useState(false);
+
+  // Auto-scroll stream text
+  useEffect(() => {
+    if (streamEndRef.current) {
+      streamEndRef.current.scrollTop = streamEndRef.current.scrollHeight;
+    }
+  }, [streamText]);
+
+  const phaseConfig = {
+    thinking: { label: '理解需求', icon: Brain, color: '#8b5cf6', desc: '正在分析产品需求和用户场景...' },
+    planning: { label: '规划结构', icon: Route, color: '#3b82f6', desc: '正在设计页面架构和导航关系...' },
+    detailing: { label: '细化方案', icon: FileText, color: '#10b981', desc: '正在完善每个页面的区块和交互细节...' },
+    complete: { label: '规划完成', icon: CheckCircle2, color: '#22c55e', desc: '方案已就绪，即将开始生成...' },
+  };
+
+  const currentPhase = phaseConfig[phase] || phaseConfig.thinking;
+  const PhaseIcon = currentPhase.icon;
+  const phaseOrder = ['thinking', 'planning', 'detailing', 'complete'];
+  const currentIdx = phaseOrder.indexOf(phase);
+
+  // Extract readable insights from stream text
+  const readableLines = extractReadableInsights(streamText);
+
+  return (
+    <div className="planning-view" data-component="Planning Analysis View">
+      {/* Header with animated brain icon */}
+      <div className="planning-header">
+        <div className="planning-brain-icon" style={{ '--phase-color': currentPhase.color }}>
+          <PhaseIcon size={22} />
+          <span className="planning-brain-pulse" />
+        </div>
+        <div className="planning-header-text">
+          <h3 className="planning-title">AI 正在分析规划</h3>
+          <p className="planning-subtitle">{currentPhase.desc}</p>
+        </div>
+      </div>
+
+      {/* Phase stepper */}
+      <div className="planning-stepper">
+        {phaseOrder.slice(0, 3).map((p, i) => {
+          const cfg = phaseConfig[p];
+          const StepIcon = cfg.icon;
+          const isActive = i === currentIdx;
+          const isDone = i < currentIdx;
+          return (
+            <div key={p} className={`planning-step${isActive ? ' active' : ''}${isDone ? ' done' : ''}`}>
+              <div className="planning-step-dot" style={{ '--step-color': cfg.color }}>
+                {isDone ? <CheckCircle2 size={12} /> : <StepIcon size={11} />}
+              </div>
+              <span className="planning-step-label">{cfg.label}</span>
+              {i < 2 && <div className={`planning-step-line${isDone ? ' filled' : ''}`} />}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Discovered pages — appear progressively */}
+      {discoveredPages.length > 0 && (
+        <div className="planning-pages-section">
+          <div className="planning-pages-label">
+            <Layers size={13} />
+            <span>已发现 {discoveredPages.length} 个页面</span>
+          </div>
+          <div className="planning-pages-grid">
+            {discoveredPages.map((page, i) => (
+              <div key={`${page.name}-${i}`} className="planning-page-card" style={{ animationDelay: `${i * 80}ms` }}>
+                <div className="planning-card-num">{i + 1}</div>
+                <div className="planning-card-info">
+                  <span className="planning-card-name">{page.name}</span>
+                  {page.description && (
+                    <span className="planning-card-desc">{page.description}</span>
+                  )}
+                  {page.route && (
+                    <span className="planning-card-route">{page.route}</span>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Live stream text — formatted insights */}
+      {streamText && (
+        <div className="planning-stream-section">
+          <button
+            className="planning-stream-toggle"
+            onClick={() => setShowRawDetail(v => !v)}
+          >
+            <Loader2 size={13} className="planning-stream-spin" />
+            <span>{showRawDetail ? '收起详细输出' : '查看分析过程'}</span>
+          </button>
+          {showRawDetail && (
+            <div className="planning-stream-content" ref={streamEndRef}>
+              {readableLines.length > 0 ? (
+                readableLines.map((line, i) => (
+                  <div key={i} className="planning-stream-line">{line}</div>
+                ))
+              ) : (
+                <pre className="planning-stream-raw">{streamText.slice(-2000)}</pre>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Calming footer hint */}
+      <div className="planning-footer">
+        <span className="planning-hint">规划过程通常需要 10-30 秒，取决于项目复杂度</span>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Extract readable insights from raw JSON streaming text.
+ * Filters noise and shows meaningful content like page names, descriptions.
+ */
+function extractReadableInsights(text) {
+  if (!text || text.length < 10) return [];
+  const lines = [];
+  const seen = new Set();
+
+  // Extract platform
+  const platformMatch = text.match(/"platform"\s*:\s*"(mobile|pc)"/);
+  if (platformMatch && !seen.has('platform')) {
+    seen.add('platform');
+    lines.push(platformMatch[1] === 'mobile' ? '📱 目标平台：移动端' : '🖥️ 目标平台：PC端');
+  }
+
+  // Extract page names with descriptions
+  const pagePattern = /"name"\s*:\s*"([^"]+)"/g;
+  let match;
+  while ((match = pagePattern.exec(text)) !== null) {
+    const name = match[1];
+    if (seen.has(`page-${name}`)) continue;
+    seen.add(`page-${name}`);
+
+    const after = text.slice(match.index, match.index + 400);
+    const descMatch = after.match(/"description"\s*:\s*"([^"]+)"/);
+    const routeMatch = after.match(/"route"\s*:\s*"([^"]+)"/);
+
+    let line = `📄 ${name}`;
+    if (descMatch) line += ` — ${descMatch[1]}`;
+    if (routeMatch) line += `  (${routeMatch[1]})`;
+    lines.push(line);
+  }
+
+  // Extract section names
+  const sectionPattern = /"sections"\s*:\s*\[/g;
+  if (text.match(sectionPattern)) {
+    const sectionNamePattern = /"name"\s*:\s*"([^"]+)"/g;
+    // Only look within sections context (skip page-level names)
+  }
+
+  return lines.slice(0, 20); // Limit to avoid overwhelming
 }
 
 function EmptyState() {

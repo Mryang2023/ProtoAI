@@ -1,22 +1,28 @@
 /**
  * Planning module — Phase 1: analyze requirements and plan page structure.
+ * Supports streaming for real-time progress visibility.
  */
 
-import { callAI } from './providers.js';
+import { callAI, callAIStream } from './providers.js';
 import { buildStyleSpec, buildContextPrompt } from './generation.js';
 
 /**
  * Phase 1: Analyze requirements and plan page structure.
+ * Accepts an optional `onStream(text)` callback for real-time progress.
  * Returns { pages, styleSpec, platform } or { pcPages, mobilePages, styleSpec, platform: 'both' }
  */
-export async function planProject(provider, config, contentDesc, fileContents, selectedStyles, styleDesc, onProgress, targetPlatform = 'auto') {
+export async function planProject(provider, config, contentDesc, fileContents, selectedStyles, styleDesc, onProgress, targetPlatform = 'auto', onStream) {
   if (!config?.apiKey) throw new Error('请先在设置中配置 AI 模型的 API Key');
 
   if (targetPlatform === 'both') {
-    onProgress?.('正在规划 PC 端方案...');
-    const pcPlan = await planProjectForPlatform(provider, config, contentDesc, fileContents, selectedStyles, styleDesc, onProgress, 'pc');
-    onProgress?.('正在规划移动端方案...');
-    const mobilePlan = await planProjectForPlatform(provider, config, contentDesc, fileContents, selectedStyles, styleDesc, onProgress, 'mobile');
+    // ── Parallel planning for "both" mode ──
+    onProgress?.('正在同时规划 PC 端和移动端方案...');
+
+    const [pcPlan, mobilePlan] = await Promise.all([
+      planProjectForPlatform(provider, config, contentDesc, fileContents, selectedStyles, styleDesc, (msg) => onProgress?.(`[PC端] ${msg}`), 'pc', onStream ? (text) => onStream(text, 'pc') : null),
+      planProjectForPlatform(provider, config, contentDesc, fileContents, selectedStyles, styleDesc, (msg) => onProgress?.(`[移动端] ${msg}`), 'mobile', onStream ? (text) => onStream(text, 'mobile') : null),
+    ]);
+
     return {
       platform: 'both',
       pcPages: pcPlan.pages,
@@ -27,10 +33,10 @@ export async function planProject(provider, config, contentDesc, fileContents, s
   }
 
   onProgress?.('正在分析需求，规划页面结构...');
-  return planProjectForPlatform(provider, config, contentDesc, fileContents, selectedStyles, styleDesc, onProgress, targetPlatform === 'auto' ? null : targetPlatform);
+  return planProjectForPlatform(provider, config, contentDesc, fileContents, selectedStyles, styleDesc, onProgress, targetPlatform === 'auto' ? null : targetPlatform, onStream ? (text) => onStream(text, targetPlatform) : null);
 }
 
-async function planProjectForPlatform(provider, config, contentDesc, fileContents, selectedStyles, styleDesc, onProgress, platform) {
+async function planProjectForPlatform(provider, config, contentDesc, fileContents, selectedStyles, styleDesc, onProgress, platform, onStream) {
   const styleSpec = buildStyleSpec(selectedStyles, styleDesc);
 
   let platformInstruction = '';
@@ -83,7 +89,15 @@ ${!platform ? `platform 判断规则：
     + '\n\n' + styleSpec
     + `\n\n请分析以上需求，${platform ? `按 ${platform === 'pc' ? 'PC端' : '移动端'}规划` : '判断目标平台并规划'}页面结构。返回严格的 JSON 对象。`;
 
-  const rawResponse = await callAI(provider, config, systemPrompt, userPrompt);
+  // Use streaming if onStream callback is provided
+  let rawResponse;
+  if (onStream) {
+    rawResponse = await callAIStream(provider, config, systemPrompt, userPrompt, (text) => {
+      onStream(text);
+    });
+  } else {
+    rawResponse = await callAI(provider, config, systemPrompt, userPrompt);
+  }
 
   let parsed;
   try {
@@ -115,4 +129,61 @@ ${!platform ? `platform 判断规则：
     })),
     styleSpec,
   };
+}
+
+/**
+ * Parse partial JSON streaming text to extract discovered page names.
+ * Tolerant of incomplete JSON — extracts whatever is available.
+ */
+export function parsePartialPlan(text) {
+  if (!text) return { platform: null, pages: [], phase: 'thinking' };
+
+  const pages = [];
+  let phase = 'thinking';
+
+  // Try to extract page names from partial JSON
+  // Pattern: "name": "页面名称"
+  const nameRegex = /"name"\s*:\s*"([^"]+)"/g;
+  let match;
+  const seenNames = new Set();
+
+  // First check if we have "platform"
+  const platformMatch = text.match(/"platform"\s*:\s*"(mobile|pc)"/);
+  const platform = platformMatch ? platformMatch[1] : null;
+
+  // Find all "pages" array entries
+  const pagesStart = text.indexOf('"pages"');
+  if (pagesStart !== -1) {
+    phase = 'planning';
+    const afterPages = text.slice(pagesStart);
+
+    // Extract each page name
+    while ((match = nameRegex.exec(afterPages)) !== null) {
+      const name = match[1];
+      if (!seenNames.has(name)) {
+        seenNames.add(name);
+
+        // Try to get description near this name
+        const namePos = match.index;
+        const contextAfter = afterPages.slice(namePos, namePos + 500);
+        const descMatch = contextAfter.match(/"description"\s*:\s*"([^"]+)"/);
+        const routeMatch = contextAfter.match(/"route"\s*:\s*"([^"]+)"/);
+
+        // Count sections for this page
+        const sectionContext = contextAfter.slice(0, contextAfter.indexOf('},') > 0 ? contextAfter.indexOf('},') : contextAfter.length);
+        const sectionCount = (sectionContext.match(/"sections"/g) || []).length;
+
+        pages.push({
+          name,
+          description: descMatch ? descMatch[1] : '',
+          route: routeMatch ? routeMatch[1] : '',
+        });
+      }
+    }
+  }
+
+  if (pages.length > 0) phase = 'detailing';
+  if (text.includes(']') && text.includes('}') && text.trim().endsWith('}')) phase = 'complete';
+
+  return { platform, pages, phase };
 }

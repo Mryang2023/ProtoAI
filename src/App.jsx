@@ -11,7 +11,7 @@ import PlansHistoryModal from './components/PlansHistoryModal.jsx';
 import QrPreviewModal from './components/QrPreviewModal.jsx';
 import TemplateLibrary from './components/TemplateLibrary.jsx';
 import { generateAllWireframes } from './components/PlanPreview.jsx';
-import { planProject, generateProjectPages, generateSinglePage, readFileContents, capturePageAsImage, refinePage, refineRegion, regenerateSinglePage, buildStyleSpec, pageFileName } from './aiService.js';
+import { planProject, generateProjectPages, generateSinglePage, readFileContents, capturePageAsImage, refinePage, refineRegion, regenerateSinglePage, buildStyleSpec, pageFileName, parsePartialPlan } from './aiService.js';
 import { htmlToReactComponent, htmlToTailwind, htmlToCleanHtml } from './codeExport.js';
 
 const BUILTIN_PROVIDER_NAMES = { openai: 'OpenAI', claude: 'Claude', custom: 'Mimo' };
@@ -222,6 +222,10 @@ export default function App() {
   // Streaming preview: shows partial HTML while AI is generating
   const [streamingHtml, setStreamingHtml] = useState('');
   const [streamingPageIndex, setStreamingPageIndex] = useState(null);
+  // Planning streaming: show AI analysis in real-time
+  const [planningStreamText, setPlanningStreamText] = useState('');
+  const [planningDiscoveredPages, setPlanningDiscoveredPages] = useState([]);
+  const [planningPhase, setPlanningPhase] = useState('');
 
   // Flag: user manually selected a page to preview during generation (ref to avoid stale closures)
   const userSelectedPageRef = useRef(false);
@@ -375,21 +379,40 @@ export default function App() {
     setMobilePages(null);
     setPcGeneratedPages(null);
     setMobileGeneratedPages(null);
+    setPlanningStreamText('');
+    setPlanningDiscoveredPages([]);
+    setPlanningPhase('thinking');
 
     try {
       const fileContents = uploadedFiles.length > 0 ? await readFileContents(uploadedFiles) : [];
-      setGenerateProgress('正在分析需求，规划页面结构...');
+      setGenerateProgress('正在分析需求，AI 正在规划页面结构...');
+      setPlanningPhase('thinking');
 
       const providerConfig = aiConfig[activeProvider] || {};
       const plan = await planProject(
         activeProvider, providerConfig, contentDesc, fileContents,
-        selectedStyles, styleDesc, (msg) => setGenerateProgress(msg),
-        targetPlatform
+        selectedStyles, styleDesc,
+        (msg) => setGenerateProgress(msg),
+        targetPlatform,
+        (text, platform) => {
+          setPlanningStreamText(text);
+          // Parse discovered pages from partial JSON
+          const partial = parsePartialPlan(text);
+          // Always update phase to show progress (thinking → planning → detailing)
+          if (partial.phase && partial.phase !== 'complete') {
+            setPlanningPhase(partial.phase);
+          }
+          if (partial.pages.length > 0) {
+            setPlanningDiscoveredPages(partial.pages);
+          }
+        }
       );
 
+      setPlanningPhase('complete');
       setPlannedStyleSpec(plan.styleSpec);
       setGenerateProgress('');
       setIsGenerating(false);
+      setPlanningStreamText('');
 
       if (plan.platform === 'both') {
         // Dual-platform mode
@@ -434,6 +457,8 @@ export default function App() {
       setGenerateError(err.message || '规划失败');
       setIsGenerating(false);
       setGenerateProgress('');
+      setPlanningStreamText('');
+      setPlanningPhase('');
     }
   }, [contentDesc, selectedStyles, styleDesc, uploadedFiles, aiConfig, activeProvider, loadedPlanId, activeProjectId, updateCurrentProject, targetPlatform]);
 
@@ -1223,6 +1248,9 @@ export default function App() {
           isGenerating={isGenerating}
           detectedPlatform={detectedPlatform}
           streamingHtml={streamingHtml}
+          planningStreamText={planningStreamText}
+          planningDiscoveredPages={planningDiscoveredPages}
+          planningPhase={planningPhase}
           onRefresh={handleRefresh}
           onExport={handleExport}
           onExportAll={handleExportAll}

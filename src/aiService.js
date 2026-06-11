@@ -286,17 +286,51 @@ function repairHtml(html) {
  * Phase 1: Analyze requirements and plan page structure.
  * Returns { pages: [{name, description, route, sections, elements, layout, interactions, keyFeatures}], styleSpec: string, platform }
  */
-export async function planProject(provider, config, contentDesc, fileContents, selectedStyles, styleDesc, onProgress) {
+export async function planProject(provider, config, contentDesc, fileContents, selectedStyles, styleDesc, onProgress, targetPlatform = 'auto') {
   if (!config?.apiKey) throw new Error('请先在设置中配置 AI 模型的 API Key');
-  onProgress?.('正在分析需求，规划页面结构...');
 
+  // "both" mode: plan PC and mobile separately
+  if (targetPlatform === 'both') {
+    onProgress?.('正在规划 PC 端方案...');
+    const pcPlan = await planProjectForPlatform(provider, config, contentDesc, fileContents, selectedStyles, styleDesc, onProgress, 'pc');
+    onProgress?.('正在规划移动端方案...');
+    const mobilePlan = await planProjectForPlatform(provider, config, contentDesc, fileContents, selectedStyles, styleDesc, onProgress, 'mobile');
+    return {
+      platform: 'both',
+      pcPages: pcPlan.pages,
+      mobilePages: mobilePlan.pages,
+      pages: pcPlan.pages, // default view
+      styleSpec: pcPlan.styleSpec,
+    };
+  }
+
+  // Single platform mode (pc, mobile, or auto-detect)
+  onProgress?.('正在分析需求，规划页面结构...');
+  return planProjectForPlatform(provider, config, contentDesc, fileContents, selectedStyles, styleDesc, onProgress, targetPlatform === 'auto' ? null : targetPlatform);
+}
+
+/**
+ * Internal: plan pages for a specific platform (or auto-detect if platform is null).
+ */
+async function planProjectForPlatform(provider, config, contentDesc, fileContents, selectedStyles, styleDesc, onProgress, platform) {
   const styleSpec = buildStyleSpec(selectedStyles, styleDesc);
 
-  const systemPrompt = `你是一个专业的产品经理兼前端工程师。用户会给你产品需求描述和上传的文件内容，你需要分析这些需求，将项目拆分成多个页面，并判断目标平台。
+  let platformInstruction = '';
+  if (platform === 'pc') {
+    platformInstruction = '目标平台已确定为 PC端（桌面网页）。请直接按 PC 端规划页面结构，无需判断平台。';
+  } else if (platform === 'mobile') {
+    platformInstruction = '目标平台已确定为 移动端（手机APP/小程序/H5）。请直接按移动端规划页面结构，无需判断平台。';
+  } else {
+    platformInstruction = '请根据需求内容自行判断目标平台（mobile 或 pc）。';
+  }
+
+  const systemPrompt = `你是一个专业的产品经理兼前端工程师。用户会给你产品需求描述和上传的文件内容，你需要分析这些需求，将项目拆分成多个页面。
+
+${platformInstruction}
 
 返回格式要求（严格 JSON 对象）：
 {
-  "platform": "mobile" 或 "pc",
+  ${platform ? `"platform": "${platform}",` : '"platform": "mobile" 或 "pc",'}
   "pages": [
     {
       "name": "页面名称（中文）",
@@ -320,10 +354,10 @@ export async function planProject(provider, config, contentDesc, fileContents, s
   ]
 }
 
-platform 判断规则：
+${!platform ? `platform 判断规则：
 - "mobile"：手机APP、微信小程序、支付宝小程序、H5移动端、外卖/打车/购物APP等移动场景
 - "pc"：后台管理系统、企业官网、SaaS平台、数据大屏、桌面Web等桌面端场景
-- 根据需求描述的内容和场景来判断，不要猜测，选择最合适的平台
+- 根据需求描述的内容和场景来判断，不要猜测，选择最合适的平台` : ''}
 
 规则：
 1. 每个页面应有明确的功能职责
@@ -332,11 +366,12 @@ platform 判断规则：
 4. sections 要尽可能详细，列出页面中每个可见的功能区块，每个区块的 elements 要列出具体的UI组件（如：搜索框、筛选标签、数据表格、分页器、按钮等）
 5. interactions 列出用户在此页面的核心操作和反馈
 6. keyFeatures 列出该页面最重要的 2-4 个功能特性
-7. 不要输出任何其他内容，只输出 JSON 对象`;
+7. 不要输出任何其他内容，只输出 JSON 对象
+8. ${platform === 'mobile' ? '所有页面必须严格按移动端设计规范规划：底部Tab导航、卡片式布局、触摸友好的按钮尺寸、下拉刷新等移动端交互' : platform === 'pc' ? '所有页面必须严格按PC端设计规范规划：顶部/侧边导航、表格/数据展示、鼠标交互、复杂表单等桌面端交互' : '根据判断的平台选择对应的设计规范'}`;
 
   const userPrompt = buildContextPrompt(contentDesc, fileContents, selectedStyles, styleDesc)
     + '\n\n' + styleSpec
-    + '\n\n请分析以上需求，判断目标平台（mobile 或 pc），并将项目拆分为多个页面。每个页面要详细描述其区块结构、UI元素和交互。返回严格的 JSON 对象格式，不要输出任何其他内容。';
+    + `\n\n请分析以上需求，${platform ? `按 ${platform === 'pc' ? 'PC端' : '移动端'}规划` : '判断目标平台并规划'}页面结构。每个页面要详细描述其区块结构、UI元素和交互。返回严格的 JSON 对象格式，不要输出任何其他内容。`;
 
   const rawResponse = await callAI(provider, config, systemPrompt, userPrompt);
 
@@ -350,12 +385,12 @@ platform 判断规则：
 
   // Support both new format {platform, pages} and legacy format (direct array)
   const pages = Array.isArray(parsed) ? parsed : parsed.pages;
-  const platform = (!Array.isArray(parsed) && parsed.platform) ? parsed.platform : 'pc';
+  const detectedPlatform = (!Array.isArray(parsed) && parsed.platform) ? parsed.platform : (platform || 'pc');
 
   if (!Array.isArray(pages) || pages.length === 0) throw new Error('AI 未能规划出有效的页面结构');
 
   return {
-    platform: platform === 'mobile' ? 'mobile' : 'pc',
+    platform: detectedPlatform === 'mobile' ? 'mobile' : 'pc',
     pages: pages.map((p) => ({
       name: p.name || '未命名页面',
       description: p.description || '',

@@ -32,6 +32,11 @@ export default function LeftPanel({
   regeneratingPageIndex,
   progressCurrent,
   progressTotal,
+  targetPlatform,
+  onTargetPlatformChange,
+  isDualPlatform,
+  activePlanPlatform,
+  onSwitchPlanPlatform,
 }) {
   const [panelWidth, setPanelWidth] = useState(400);
   const [stylesExpanded, setStylesExpanded] = useState(false);
@@ -156,13 +161,33 @@ export default function LeftPanel({
                 fontWeight: 600,
                 padding: '2px 8px',
                 borderRadius: '9999px',
-                background: detectedPlatform === 'mobile' ? 'rgba(249,115,22,0.1)' : 'rgba(37,99,235,0.1)',
-                color: detectedPlatform === 'mobile' ? '#ea580c' : '#2563eb',
+                background: isDualPlatform ? 'rgba(124,58,237,0.1)' : detectedPlatform === 'mobile' ? 'rgba(249,115,22,0.1)' : 'rgba(37,99,235,0.1)',
+                color: isDualPlatform ? '#7c3aed' : detectedPlatform === 'mobile' ? '#ea580c' : '#2563eb',
               }}>
-                {detectedPlatform === 'mobile' ? <Smartphone size={12} /> : <Monitor size={12} />}
-                {detectedPlatform === 'mobile' ? '移动端' : 'PC端'}
+                {isDualPlatform ? <LayoutList size={12} /> : detectedPlatform === 'mobile' ? <Smartphone size={12} /> : <Monitor size={12} />}
+                {isDualPlatform ? '双端' : detectedPlatform === 'mobile' ? '移动端' : 'PC端'}
               </span>
             </div>
+
+            {/* Dual-platform tab switcher */}
+            {isDualPlatform && !isGenerating && (
+              <div className="platform-plan-tabs">
+                <button
+                  className={`platform-plan-tab${activePlanPlatform === 'pc' ? ' active' : ''}`}
+                  onClick={() => onSwitchPlanPlatform && onSwitchPlanPlatform('pc')}
+                >
+                  <Monitor size={12} />
+                  PC端方案
+                </button>
+                <button
+                  className={`platform-plan-tab${activePlanPlatform === 'mobile' ? ' active' : ''}`}
+                  onClick={() => onSwitchPlanPlatform && onSwitchPlanPlatform('mobile')}
+                >
+                  <Smartphone size={12} />
+                  移动端方案
+                </button>
+              </div>
+            )}
 
             {/* Progress bar during batch generation */}
             {isGenerating && progressTotal > 0 && (
@@ -316,7 +341,7 @@ export default function LeftPanel({
         )}
       </div>
 
-      {/* Model indicator + Generate button */}
+      {/* Model indicator + Platform selector + Generate button */}
       <div style={{ padding: 'var(--sp-4) var(--sp-5)', borderTop: '1px solid var(--border-light)' }}>
         <button
           className="model-indicator"
@@ -328,6 +353,43 @@ export default function LeftPanel({
           <span className="model-indicator-label">当前模型</span>
           <span className="model-indicator-value">{activeModel.provider} · {activeModel.model}</span>
         </button>
+
+        {/* Platform selector — shown before planning */}
+        {!plannedPages && (
+          <div className="platform-selector" style={{ marginTop: 'var(--sp-3)' }}>
+            <div className="platform-selector-label">
+              <Monitor size={12} style={{ opacity: 0.6 }} />
+              目标平台
+            </div>
+            <div className="platform-selector-options">
+              <button
+                className={`platform-option${targetPlatform === 'pc' ? ' active' : ''}`}
+                onClick={() => onTargetPlatformChange && onTargetPlatformChange('pc')}
+              >
+                <Monitor size={15} />
+                <span className="platform-option-label">PC端</span>
+                <span className="platform-option-desc">桌面网页</span>
+              </button>
+              <button
+                className={`platform-option${targetPlatform === 'mobile' ? ' active' : ''}`}
+                onClick={() => onTargetPlatformChange && onTargetPlatformChange('mobile')}
+              >
+                <Smartphone size={15} />
+                <span className="platform-option-label">移动端</span>
+                <span className="platform-option-desc">APP/小程序</span>
+              </button>
+              <button
+                className={`platform-option${targetPlatform === 'both' ? ' active' : ''}`}
+                onClick={() => onTargetPlatformChange && onTargetPlatformChange('both')}
+              >
+                <LayoutList size={15} />
+                <span className="platform-option-label">双端</span>
+                <span className="platform-option-desc">PC + 移动</span>
+              </button>
+            </div>
+          </div>
+        )}
+
         {!plannedPages ? (
           <button
             className="btn-generate"
@@ -339,7 +401,7 @@ export default function LeftPanel({
             {isGenerating ? (
               <><span className="spinner" />分析中...</>
             ) : (
-              <><Sparkles size={18} />规划方案</>
+              <><Sparkles size={18} />规划方案{targetPlatform === 'both' ? '（双端）' : ''}</>
             )}
           </button>
         ) : null}

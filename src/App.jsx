@@ -172,6 +172,16 @@ export default function App() {
   const [plannedStyleSpec, setPlannedStyleSpec] = useState('');
   const [detectedPlatform, setDetectedPlatform] = useState('pc');
 
+  // Target platform selection (user chooses before planning)
+  const [targetPlatform, setTargetPlatform] = useState('pc'); // 'pc' | 'mobile' | 'both'
+  // Dual-platform plan data
+  const [pcPages, setPcPages] = useState(null);
+  const [mobilePages, setMobilePages] = useState(null);
+  const [activePlanPlatform, setActivePlanPlatform] = useState('pc'); // which platform tab is active in dual mode
+  // Generated pages per platform (dual mode keeps both sets)
+  const [pcGeneratedPages, setPcGeneratedPages] = useState(null);
+  const [mobileGeneratedPages, setMobileGeneratedPages] = useState(null);
+
   // Plan preview & view mode
   const [rightViewMode, setRightViewMode] = useState('empty'); // 'empty' | 'plan' | 'prototype'
   const [wireframeHtmls, setWireframeHtmls] = useState([]);
@@ -278,6 +288,11 @@ export default function App() {
       setIsGenerating(false);
       setIsRefining(false);
       setIsRegenerating(false);
+      setPcPages(null);
+      setMobilePages(null);
+      setPcGeneratedPages(null);
+      setMobileGeneratedPages(null);
+      setActivePlanPlatform('pc');
       // Reset view mode: show prototype if pages exist, otherwise empty
       if (proj.pages?.length > 0 && proj.pages.some(p => p?.html)) {
         setRightViewMode('prototype');
@@ -313,6 +328,11 @@ export default function App() {
     setIsRegenerating(false);
     setWireframeHtmls([]);
     setRightViewMode('empty');
+    setPcPages(null);
+    setMobilePages(null);
+    setPcGeneratedPages(null);
+    setMobileGeneratedPages(null);
+    setActivePlanPlatform('pc');
   }, []);
 
   const handleProjectNameChange = useCallback((newName) => {
@@ -342,6 +362,10 @@ export default function App() {
     setGenerateError('');
     setGenerateProgress('正在读取文件内容...');
     setPlannedPages(null);
+    setPcPages(null);
+    setMobilePages(null);
+    setPcGeneratedPages(null);
+    setMobileGeneratedPages(null);
 
     try {
       const fileContents = uploadedFiles.length > 0 ? await readFileContents(uploadedFiles) : [];
@@ -350,18 +374,35 @@ export default function App() {
       const providerConfig = aiConfig[activeProvider] || {};
       const plan = await planProject(
         activeProvider, providerConfig, contentDesc, fileContents,
-        selectedStyles, styleDesc, (msg) => setGenerateProgress(msg)
+        selectedStyles, styleDesc, (msg) => setGenerateProgress(msg),
+        targetPlatform
       );
 
-      setPlannedPages(plan.pages);
       setPlannedStyleSpec(plan.styleSpec);
-      setDetectedPlatform(plan.platform || 'pc');
       setGenerateProgress('');
       setIsGenerating(false);
 
-      // Generate wireframe previews for right canvas
-      const wfHtmls = generateAllWireframes(plan.pages, plan.platform || 'pc');
-      setWireframeHtmls(wfHtmls);
+      if (plan.platform === 'both') {
+        // Dual-platform mode
+        setPcPages(plan.pcPages);
+        setMobilePages(plan.mobilePages);
+        setPlannedPages(plan.pcPages); // default to PC view
+        setDetectedPlatform('pc');
+        setActivePlanPlatform('pc');
+
+        // Generate wireframes for PC (default view)
+        const wfHtmls = generateAllWireframes(plan.pcPages, 'pc');
+        setWireframeHtmls(wfHtmls);
+      } else {
+        // Single platform mode
+        setPlannedPages(plan.pages);
+        setDetectedPlatform(plan.platform || 'pc');
+        setActivePlanPlatform(plan.platform || 'pc');
+
+        const wfHtmls = generateAllWireframes(plan.pages, plan.platform || 'pc');
+        setWireframeHtmls(wfHtmls);
+      }
+
       setRightViewMode('plan');
 
       // Auto-save plan to project
@@ -371,7 +412,9 @@ export default function App() {
         description: contentDesc || '文件导入生成',
         selectedStyles: [...selectedStyles],
         styleDesc,
-        plannedPages: plan.pages,
+        plannedPages: plan.platform === 'both' ? plan.pcPages : plan.pages,
+        pcPages: plan.pcPages || null,
+        mobilePages: plan.mobilePages || null,
         styleSpec: plan.styleSpec,
         platform: plan.platform || 'pc',
       };
@@ -383,7 +426,37 @@ export default function App() {
       setIsGenerating(false);
       setGenerateProgress('');
     }
-  }, [contentDesc, selectedStyles, styleDesc, uploadedFiles, aiConfig, activeProvider, loadedPlanId, activeProjectId, updateCurrentProject]);
+  }, [contentDesc, selectedStyles, styleDesc, uploadedFiles, aiConfig, activeProvider, loadedPlanId, activeProjectId, updateCurrentProject, targetPlatform]);
+
+  // Switch between PC/mobile plan views in dual-platform mode
+  const handleSwitchPlanPlatform = useCallback((platform) => {
+    setActivePlanPlatform(platform);
+    if (platform === 'pc' && pcPages) {
+      setPlannedPages(pcPages);
+      setDetectedPlatform('pc');
+      const wfHtmls = generateAllWireframes(pcPages, 'pc');
+      setWireframeHtmls(wfHtmls);
+      // If pages are generated, switch to show PC platform pages
+      if (pcGeneratedPages) {
+        setPages(pcGeneratedPages);
+        setCurrentPageIndex(0);
+        setCode(pcGeneratedPages[0]?.html || '');
+        setRightViewMode('prototype');
+      }
+    } else if (platform === 'mobile' && mobilePages) {
+      setPlannedPages(mobilePages);
+      setDetectedPlatform('mobile');
+      const wfHtmls = generateAllWireframes(mobilePages, 'mobile');
+      setWireframeHtmls(wfHtmls);
+      // If pages are generated, switch to show mobile platform pages
+      if (mobileGeneratedPages) {
+        setPages(mobileGeneratedPages);
+        setCurrentPageIndex(0);
+        setCode(mobileGeneratedPages[0]?.html || '');
+        setRightViewMode('prototype');
+      }
+    }
+  }, [pcPages, mobilePages, pcGeneratedPages, mobileGeneratedPages]);
 
   // ── Phase 2: Generate (after plan confirmation) ──
 
@@ -393,58 +466,141 @@ export default function App() {
     setIsGenerating(true);
     isGeneratingRef.current = true;
     setGenerateError('');
-    setProgressCurrent(0);
-    setProgressTotal(plannedPages.length);
-    setPages([]);
-    setCurrentPageIndex(0);
     userSelectedPageRef.current = false;
-    // Keep plannedPages visible — user can track each page's progress
 
-    // Local counter for accurate progress tracking across parallel completions
-    let completedCount = 0;
+    const isDualMode = targetPlatform === 'both' && pcPages && mobilePages;
 
     try {
       const fileContents = uploadedFiles.length > 0 ? await readFileContents(uploadedFiles) : [];
       const providerConfig = aiConfig[activeProvider] || {};
-      const result = await generateProjectPages(
-        activeProvider, providerConfig, plannedPages, plannedStyleSpec,
-        contentDesc, fileContents, selectedStyles, styleDesc, detectedPlatform,
-        (msg) => setGenerateProgress(msg),
-        (pageResult, index, total) => {
-          completedCount++;
-          setProgressCurrent(completedCount);
-          setPages((prev) => {
-            const next = [...prev];
-            next[index] = pageResult;
-            return next;
-          });
-          // Do NOT auto-switch currentPageIndex during parallel generation
-          // to prevent iframe from thrashing between different HTML documents.
-          // User can manually click page tabs to preview completed pages.
-        }
-      );
 
-      // Final state — switch to first page after all pages are done
-      setPages(result.pages);
-      if (result.pages.length > 0) {
+      if (isDualMode) {
+        // ── Dual-platform: generate PC pages, then mobile pages ──
+        const totalPc = pcPages.length;
+        const totalMobile = mobilePages.length;
+        const totalAll = totalPc + totalMobile;
+        let completedCount = 0;
+
+        setProgressTotal(totalAll);
+        setProgressCurrent(0);
+        setPages([]);
         setCurrentPageIndex(0);
-        setCode(result.pages[0].html || '');
-      }
 
-      // Save to history — never clears old entries
-      const entry = {
-        id: Date.now().toString(),
-        timestamp: formatTime(new Date()),
-        description: contentDesc
+        // Phase 1: PC pages
+        setGenerateProgress(`正在生成PC端页面 (0/${totalPc})...`);
+        const pcResult = await generateProjectPages(
+          activeProvider, providerConfig, pcPages, plannedStyleSpec,
+          contentDesc, fileContents, selectedStyles, styleDesc, 'pc',
+          (msg) => setGenerateProgress(`[PC端] ${msg}`),
+          (pageResult, index) => {
+            completedCount++;
+            setProgressCurrent(completedCount);
+            setPages((prev) => {
+              const next = [...prev];
+              next[index] = pageResult;
+              return next;
+            });
+          }
+        );
+        setPcGeneratedPages(pcResult.pages);
+
+        // Phase 2: Mobile pages
+        setGenerateProgress(`正在生成移动端页面 (0/${totalMobile})...`);
+        setPages([]); // reset for mobile phase display
+        const mobileResult = await generateProjectPages(
+          activeProvider, providerConfig, mobilePages, plannedStyleSpec,
+          contentDesc, fileContents, selectedStyles, styleDesc, 'mobile',
+          (msg) => setGenerateProgress(`[移动端] ${msg}`),
+          (pageResult, index) => {
+            completedCount++;
+            setProgressCurrent(completedCount);
+            setPages((prev) => {
+              const next = [...prev];
+              next[index] = pageResult;
+              return next;
+            });
+          }
+        );
+        setMobileGeneratedPages(mobileResult.pages);
+
+        // Show active platform's pages as the default view
+        if (activePlanPlatform === 'pc') {
+          setPages(pcResult.pages);
+          if (pcResult.pages.length > 0) {
+            setCurrentPageIndex(0);
+            setCode(pcResult.pages[0].html || '');
+          }
+        } else {
+          setPages(mobileResult.pages);
+          if (mobileResult.pages.length > 0) {
+            setCurrentPageIndex(0);
+            setCode(mobileResult.pages[0].html || '');
+          }
+        }
+
+        // Save to history with both platform page sets
+        const desc = contentDesc
           ? contentDesc.slice(0, 80) + (contentDesc.length > 80 ? '...' : '')
-          : '文件导入生成',
-        styles: [...selectedStyles],
-        pages: result.pages,
-        pageCount: result.pages.length,
-      };
-      const currentHistory = projectsRef.current[activeProjectId]?.history || [];
-      updateCurrentProject({ history: [entry, ...currentHistory] });
-      setCurrentHistoryId(entry.id);
+          : '文件导入生成';
+        const entry = {
+          id: Date.now().toString(),
+          timestamp: formatTime(new Date()),
+          description: desc,
+          styles: [...selectedStyles],
+          pages: activePlanPlatform === 'pc' ? pcResult.pages : mobileResult.pages,
+          pcGeneratedPages: pcResult.pages,
+          mobileGeneratedPages: mobileResult.pages,
+          pageCount: totalAll,
+          platform: 'both',
+        };
+        const currentHistory = projectsRef.current[activeProjectId]?.history || [];
+        updateCurrentProject({ history: [entry, ...currentHistory] });
+        setCurrentHistoryId(entry.id);
+      } else {
+        // ── Single-platform mode (original logic) ──
+        setProgressCurrent(0);
+        setProgressTotal(plannedPages.length);
+        setPages([]);
+        setCurrentPageIndex(0);
+
+        let completedCount = 0;
+        const result = await generateProjectPages(
+          activeProvider, providerConfig, plannedPages, plannedStyleSpec,
+          contentDesc, fileContents, selectedStyles, styleDesc, detectedPlatform,
+          (msg) => setGenerateProgress(msg),
+          (pageResult, index) => {
+            completedCount++;
+            setProgressCurrent(completedCount);
+            setPages((prev) => {
+              const next = [...prev];
+              next[index] = pageResult;
+              return next;
+            });
+          }
+        );
+
+        setPages(result.pages);
+        if (result.pages.length > 0) {
+          setCurrentPageIndex(0);
+          setCode(result.pages[0].html || '');
+        }
+
+        const desc = contentDesc
+          ? contentDesc.slice(0, 80) + (contentDesc.length > 80 ? '...' : '')
+          : '文件导入生成';
+        const entry = {
+          id: Date.now().toString(),
+          timestamp: formatTime(new Date()),
+          description: desc,
+          styles: [...selectedStyles],
+          pages: result.pages,
+          pageCount: result.pages.length,
+          platform: detectedPlatform,
+        };
+        const currentHistory = projectsRef.current[activeProjectId]?.history || [];
+        updateCurrentProject({ history: [entry, ...currentHistory] });
+        setCurrentHistoryId(entry.id);
+      }
     } catch (err) {
       setGenerateError(err.message || '生成失败，请检查 AI 模型配置');
     } finally {
@@ -453,11 +609,10 @@ export default function App() {
       setGenerateProgress('');
       setProgressCurrent(0);
       setProgressTotal(0);
-      // Keep plannedPages for plan-prototype linking, just switch view mode
       setRightViewMode('prototype');
       userSelectedPageRef.current = false;
     }
-  }, [plannedPages, plannedStyleSpec, contentDesc, selectedStyles, styleDesc, aiConfig, activeProvider, uploadedFiles, detectedPlatform, activeProjectId, updateCurrentProject]);
+  }, [plannedPages, plannedStyleSpec, contentDesc, selectedStyles, styleDesc, aiConfig, activeProvider, uploadedFiles, detectedPlatform, activeProjectId, updateCurrentProject, targetPlatform, pcPages, mobilePages, activePlanPlatform]);
 
   // Cancel plan
   const handleCancelPlan = useCallback(() => {
@@ -466,6 +621,11 @@ export default function App() {
     setDetectedPlatform('pc');
     setWireframeHtmls([]);
     setRightViewMode('empty');
+    setPcPages(null);
+    setMobilePages(null);
+    setPcGeneratedPages(null);
+    setMobileGeneratedPages(null);
+    setActivePlanPlatform('pc');
     updateCurrentProject({ loadedPlanId: null });
   }, [updateCurrentProject]);
 
@@ -493,13 +653,33 @@ export default function App() {
       styleDesc: plan.styleDesc || '',
       loadedPlanId: plan.id,
     });
-    setPlannedPages(plan.plannedPages);
+
+    // Restore dual-platform data if present
+    const isDualPlan = plan.platform === 'both' && (plan.pcPages || plan.mobilePages);
+    if (isDualPlan) {
+      setPcPages(plan.pcPages || null);
+      setMobilePages(plan.mobilePages || null);
+      setPlannedPages(plan.pcPages || plan.mobilePages || plan.plannedPages);
+      setDetectedPlatform('pc');
+      setActivePlanPlatform('pc');
+    } else {
+      setPlannedPages(plan.plannedPages);
+      setPlannedStyleSpec(plan.styleSpec || '');
+      setDetectedPlatform(plan.platform === 'both' ? 'pc' : (plan.platform || 'pc'));
+      setPcPages(null);
+      setMobilePages(null);
+      setActivePlanPlatform(plan.platform === 'both' ? 'pc' : (plan.platform || 'pc'));
+    }
     setPlannedStyleSpec(plan.styleSpec || '');
-    setDetectedPlatform(plan.platform || 'pc');
+    setPcGeneratedPages(null);
+    setMobileGeneratedPages(null);
     setGenerateError('');
+
     // Generate wireframes for the loaded plan
-    if (plan.plannedPages?.length > 0) {
-      const wfHtmls = generateAllWireframes(plan.plannedPages, plan.platform || 'pc');
+    const displayPages = isDualPlan ? (plan.pcPages || plan.mobilePages) : plan.plannedPages;
+    const displayPlatform = isDualPlan ? 'pc' : (plan.platform === 'both' ? 'pc' : (plan.platform || 'pc'));
+    if (displayPages?.length > 0) {
+      const wfHtmls = generateAllWireframes(displayPages, displayPlatform);
       setWireframeHtmls(wfHtmls);
       setRightViewMode('plan');
     }
@@ -514,13 +694,32 @@ export default function App() {
       styleDesc: plan.styleDesc || '',
       loadedPlanId: plan.id,
     });
-    setPlannedPages(plan.plannedPages);
+
+    // Restore dual-platform data if present
+    const isDualPlan = plan.platform === 'both' && (plan.pcPages || plan.mobilePages);
+    if (isDualPlan) {
+      setPcPages(plan.pcPages || null);
+      setMobilePages(plan.mobilePages || null);
+      setPlannedPages(plan.pcPages || plan.mobilePages || plan.plannedPages);
+      setDetectedPlatform('pc');
+      setActivePlanPlatform('pc');
+    } else {
+      setPlannedPages(plan.plannedPages);
+      setDetectedPlatform(plan.platform === 'both' ? 'pc' : (plan.platform || 'pc'));
+      setPcPages(null);
+      setMobilePages(null);
+      setActivePlanPlatform(plan.platform === 'both' ? 'pc' : (plan.platform || 'pc'));
+    }
     setPlannedStyleSpec(plan.styleSpec || '');
-    setDetectedPlatform(plan.platform || 'pc');
+    setPcGeneratedPages(null);
+    setMobileGeneratedPages(null);
     setGenerateError('');
+
     // Generate wireframes for the loaded plan
-    if (plan.plannedPages?.length > 0) {
-      const wfHtmls = generateAllWireframes(plan.plannedPages, plan.platform || 'pc');
+    const displayPages = isDualPlan ? (plan.pcPages || plan.mobilePages) : plan.plannedPages;
+    const displayPlatform = isDualPlan ? 'pc' : (plan.platform === 'both' ? 'pc' : (plan.platform || 'pc'));
+    if (displayPages?.length > 0) {
+      const wfHtmls = generateAllWireframes(displayPages, displayPlatform);
       setWireframeHtmls(wfHtmls);
       setRightViewMode('plan');
     }
@@ -904,6 +1103,11 @@ export default function App() {
           regeneratingPageIndex={regeneratingPageIndex}
           progressCurrent={progressCurrent}
           progressTotal={progressTotal}
+          targetPlatform={targetPlatform}
+          onTargetPlatformChange={setTargetPlatform}
+          isDualPlatform={!!pcPages && !!mobilePages}
+          activePlanPlatform={activePlanPlatform}
+          onSwitchPlanPlatform={handleSwitchPlanPlatform}
         />
 
         <RightPanel

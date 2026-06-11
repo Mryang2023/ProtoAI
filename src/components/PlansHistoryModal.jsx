@@ -2,9 +2,27 @@ import { useState, useRef, useEffect, useMemo } from 'react';
 import {
   X, Play, Trash2, Check, Layers, Clock, Search, Monitor, Smartphone,
   Copy, Pencil, ChevronDown, ChevronRight, SortAsc, Filter, Eye,
-  LayoutGrid, List, ArrowUpDown, MoreHorizontal,
+  LayoutGrid, List, ArrowUpDown, MoreHorizontal, Sparkles,
+  Palette, FileCode, Zap,
 } from 'lucide-react';
 import { generateAllWireframes } from './PlanPreview.jsx';
+
+const styleLabels = {
+  business: '商务', minimal: '极简', colorful: '彩色', playful: '活泼',
+  tech: '科技', editorial: '文艺', modern: '现代SaaS', elegant: '优雅高端', fintech: '金融科技',
+};
+
+const styleColors = {
+  business: { bg: '#eff6ff', fg: '#2563eb', border: '#bfdbfe' },
+  minimal: { bg: '#f5f5f5', fg: '#525252', border: '#d4d4d4' },
+  colorful: { bg: '#fef3c7', fg: '#b45309', border: '#fcd34d' },
+  playful: { bg: '#fff7ed', fg: '#ea580c', border: '#fed7aa' },
+  tech: { bg: '#f0fdf4', fg: '#16a34a', border: '#bbf7d0' },
+  editorial: { bg: '#faf5ff', fg: '#7c3aed', border: '#ddd6fe' },
+  modern: { bg: '#eef2ff', fg: '#4f46e5', border: '#c7d2fe' },
+  elegant: { bg: '#fefce8', fg: '#a16207', border: '#fde68a' },
+  fintech: { bg: '#ecfeff', fg: '#0891b2', border: '#a5f3fc' },
+};
 
 export default function PlansHistoryModal({
   savedPlans = [],
@@ -17,20 +35,19 @@ export default function PlansHistoryModal({
 }) {
   const overlayRef = useRef(null);
   const [searchQuery, setSearchQuery] = useState('');
-  const [platformFilter, setPlatformFilter] = useState('all'); // all | pc | mobile
-  const [sortBy, setSortBy] = useState('newest'); // newest | oldest | pages
+  const [platformFilter, setPlatformFilter] = useState('all');
+  const [sortBy, setSortBy] = useState('newest');
   const [expandedPlanId, setExpandedPlanId] = useState(null);
   const [editingPlanId, setEditingPlanId] = useState(null);
   const [editingName, setEditingName] = useState('');
   const [wireframeCache, setWireframeCache] = useState({});
-  const [viewStyle, setViewStyle] = useState('card'); // card | compact
+  const [viewStyle, setViewStyle] = useState('card');
+  const [hoveredPlanId, setHoveredPlanId] = useState(null);
 
-  // Close on overlay click
   const handleOverlayClick = (e) => {
     if (e.target === overlayRef.current) onClose();
   };
 
-  // Close on Escape
   useEffect(() => {
     const handler = (e) => {
       if (e.key === 'Escape') {
@@ -42,7 +59,6 @@ export default function PlansHistoryModal({
     return () => document.removeEventListener('keydown', handler);
   }, [onClose, editingPlanId]);
 
-  // Generate wireframe thumbnails for expanded plan
   const getWireframes = (plan) => {
     if (wireframeCache[plan.id]) return wireframeCache[plan.id];
     if (!plan.plannedPages?.length) return [];
@@ -51,11 +67,8 @@ export default function PlansHistoryModal({
     return htmls;
   };
 
-  // Filter and sort plans
   const filteredPlans = useMemo(() => {
     let result = [...savedPlans];
-
-    // Search filter
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
       result = result.filter((p) => {
@@ -65,29 +78,17 @@ export default function PlansHistoryModal({
         return false;
       });
     }
-
-    // Platform filter
     if (platformFilter !== 'all') {
       result = result.filter((p) => (p.platform || 'pc') === platformFilter);
     }
-
-    // Sort
     switch (sortBy) {
-      case 'newest':
-        result.sort((a, b) => (b.id || '').localeCompare(a.id || ''));
-        break;
-      case 'oldest':
-        result.sort((a, b) => (a.id || '').localeCompare(b.id || ''));
-        break;
-      case 'pages':
-        result.sort((a, b) => (b.plannedPages?.length || 0) - (a.plannedPages?.length || 0));
-        break;
+      case 'newest': result.sort((a, b) => (b.id || '').localeCompare(a.id || '')); break;
+      case 'oldest': result.sort((a, b) => (a.id || '').localeCompare(b.id || '')); break;
+      case 'pages': result.sort((a, b) => (b.plannedPages?.length || 0) - (a.plannedPages?.length || 0)); break;
     }
-
     return result;
   }, [savedPlans, searchQuery, platformFilter, sortBy]);
 
-  // Stats
   const totalPlans = savedPlans.length;
   const pcCount = savedPlans.filter((p) => (p.platform || 'pc') === 'pc').length;
   const mobileCount = savedPlans.filter((p) => p.platform === 'mobile').length;
@@ -112,49 +113,66 @@ export default function PlansHistoryModal({
     if (onDuplicatePlan) onDuplicatePlan(plan);
   };
 
-  const styleLabels = {
-    business: '商务', minimal: '极简', colorful: '彩色', playful: '活泼',
-    tech: '科技', editorial: '文艺', modern: '现代SaaS', elegant: '优雅高端', fintech: '金融科技',
+  // Get primary style color for a plan
+  const getPlanAccent = (plan) => {
+    const style = plan.selectedStyles?.[0] || 'business';
+    return styleColors[style] || styleColors.business;
   };
 
   return (
-    <div className="modal-overlay" ref={overlayRef} onClick={handleOverlayClick}>
-      <div className="modal-content plans-history-modal">
+    <div className="modal-overlay phm-overlay" ref={overlayRef} onClick={handleOverlayClick}>
+      <div className="modal-content phm-modal">
         {/* Header */}
-        <div className="modal-header">
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <div className="phm-header">
+          <div className="phm-header-left">
             <div className="phm-header-icon">
-              <Layers size={18} />
+              <Layers size={20} />
             </div>
-            <div>
-              <h2 className="modal-title" style={{ margin: 0, fontSize: 16 }}>历史方案</h2>
-              <div className="phm-header-stats">
-                <span>共 {totalPlans} 个方案</span>
-                {pcCount > 0 && <span className="phm-stat-badge pc"><Monitor size={10} />{pcCount}</span>}
-                {mobileCount > 0 && <span className="phm-stat-badge mobile"><Smartphone size={10} />{mobileCount}</span>}
+            <div className="phm-header-text">
+              <h2 className="phm-header-title">历史方案</h2>
+              <div className="phm-header-subtitle">
+                <span className="phm-subtitle-count">{totalPlans} 个方案</span>
+                {pcCount > 0 && (
+                  <span className="phm-subtitle-chip pc">
+                    <Monitor size={10} />{pcCount}
+                  </span>
+                )}
+                {mobileCount > 0 && (
+                  <span className="phm-subtitle-chip mobile">
+                    <Smartphone size={10} />{mobileCount}
+                  </span>
+                )}
               </div>
             </div>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-            <button className={`btn btn-icon btn-sm ${viewStyle === 'card' ? 'active' : ''}`}
-              onClick={() => setViewStyle('card')} title="卡片视图">
-              <LayoutGrid size={14} />
-            </button>
-            <button className={`btn btn-icon btn-sm ${viewStyle === 'compact' ? 'active' : ''}`}
-              onClick={() => setViewStyle('compact')} title="紧凑视图">
-              <List size={14} />
-            </button>
-            <button className="btn btn-icon" onClick={onClose} aria-label="关闭">
+          <div className="phm-header-right">
+            <div className="phm-view-toggle">
+              <button
+                className={`phm-toggle-btn${viewStyle === 'card' ? ' active' : ''}`}
+                onClick={() => setViewStyle('card')}
+                title="卡片视图"
+              >
+                <LayoutGrid size={14} />
+              </button>
+              <button
+                className={`phm-toggle-btn${viewStyle === 'compact' ? ' active' : ''}`}
+                onClick={() => setViewStyle('compact')}
+                title="紧凑视图"
+              >
+                <List size={14} />
+              </button>
+            </div>
+            <button className="phm-close-btn" onClick={onClose} aria-label="关闭">
               <X size={18} />
             </button>
           </div>
         </div>
 
-        {/* Toolbar: Search + Filters + Sort */}
+        {/* Toolbar */}
         {totalPlans > 0 && (
           <div className="phm-toolbar">
-            <div className="phm-search">
-              <Search size={14} style={{ color: 'var(--fg-muted)', flexShrink: 0 }} />
+            <div className="phm-search-wrap">
+              <Search size={15} className="phm-search-icon" />
               <input
                 type="text"
                 className="phm-search-input"
@@ -164,29 +182,30 @@ export default function PlansHistoryModal({
               />
               {searchQuery && (
                 <button className="phm-search-clear" onClick={() => setSearchQuery('')}>
-                  <X size={12} />
+                  <X size={13} />
                 </button>
               )}
             </div>
-            <div className="phm-filters">
-              <div className="phm-filter-group">
+            <div className="phm-toolbar-row">
+              <div className="phm-platform-tabs">
                 {[
-                  { key: 'all', label: '全部' },
-                  { key: 'pc', label: 'PC端', icon: Monitor },
-                  { key: 'mobile', label: '移动端', icon: Smartphone },
+                  { key: 'all', label: '全部', count: totalPlans },
+                  { key: 'pc', label: 'PC端', count: pcCount, icon: Monitor },
+                  { key: 'mobile', label: '移动端', count: mobileCount, icon: Smartphone },
                 ].map((f) => (
                   <button
                     key={f.key}
-                    className={`phm-filter-btn${platformFilter === f.key ? ' active' : ''}`}
+                    className={`phm-platform-tab${platformFilter === f.key ? ' active' : ''}`}
                     onClick={() => setPlatformFilter(f.key)}
                   >
                     {f.icon && <f.icon size={12} />}
-                    {f.label}
+                    <span>{f.label}</span>
+                    {f.count > 0 && <span className="phm-tab-count">{f.count}</span>}
                   </button>
                 ))}
               </div>
-              <div className="phm-sort">
-                <ArrowUpDown size={12} style={{ color: 'var(--fg-muted)' }} />
+              <div className="phm-sort-wrap">
+                <ArrowUpDown size={12} className="phm-sort-icon" />
                 <select
                   className="phm-sort-select"
                   value={sortBy}
@@ -202,124 +221,156 @@ export default function PlansHistoryModal({
         )}
 
         {/* Body */}
-        <div className="plans-history-body">
+        <div className="phm-body">
           {totalPlans === 0 ? (
-            <div className="plans-history-empty">
-              <div className="phm-empty-icon"><Clock size={36} /></div>
+            <div className="phm-empty">
+              <div className="phm-empty-visual">
+                <div className="phm-empty-circle" />
+                <Clock size={32} className="phm-empty-icon" />
+              </div>
               <h3 className="phm-empty-title">暂无历史方案</h3>
-              <p className="phm-empty-desc">每次规划方案后会自动保存到当前项目。<br/>你可以在这里查看、加载和管理所有历史方案。</p>
+              <p className="phm-empty-desc">每次规划方案后会自动保存到当前项目<br />你可以在这里查看、加载和管理所有历史方案</p>
             </div>
           ) : filteredPlans.length === 0 ? (
-            <div className="plans-history-empty">
-              <Search size={28} style={{ color: 'var(--fg-muted)', opacity: 0.4 }} />
-              <p className="phm-empty-title" style={{ marginTop: 8 }}>未找到匹配的方案</p>
+            <div className="phm-empty">
+              <div className="phm-empty-visual">
+                <div className="phm-empty-circle" />
+                <Search size={28} className="phm-empty-icon" />
+              </div>
+              <h3 className="phm-empty-title">未找到匹配的方案</h3>
               <p className="phm-empty-desc">尝试修改搜索关键词或筛选条件</p>
             </div>
           ) : (
-            <div className={`plans-history-list ${viewStyle}`}>
+            <div className={`phm-list ${viewStyle}`}>
               {filteredPlans.map((plan) => {
                 const isLoaded = loadedPlanId === plan.id;
                 const isExpanded = expandedPlanId === plan.id;
                 const isEditing = editingPlanId === plan.id;
+                const isHovered = hoveredPlanId === plan.id;
                 const wireframes = isExpanded ? getWireframes(plan) : [];
                 const pageCount = plan.plannedPages?.length || 0;
+                const accent = getPlanAccent(plan);
 
                 return (
                   <div
                     key={plan.id}
-                    className={`plan-history-card${isLoaded ? ' loaded' : ''}${isExpanded ? ' expanded' : ''} ${viewStyle}`}
+                    className={`phm-card${isLoaded ? ' loaded' : ''}${isExpanded ? ' expanded' : ''} ${viewStyle}`}
+                    onMouseEnter={() => setHoveredPlanId(plan.id)}
+                    onMouseLeave={() => setHoveredPlanId(null)}
+                    style={{ '--plan-accent': accent.fg, '--plan-accent-bg': accent.bg, '--plan-accent-border': accent.border }}
                   >
-                    {/* Card header */}
-                    <div className="plan-history-header" onClick={() => handleToggleExpand(plan.id)}>
-                      <button className="phm-expand-toggle" aria-label={isExpanded ? '收起' : '展开'}>
-                        {isExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-                      </button>
+                    {/* Accent strip */}
+                    <div className="phm-card-accent" />
 
-                      <div className="plan-history-main">
+                    {/* Card header row */}
+                    <div className="phm-card-header" onClick={() => handleToggleExpand(plan.id)}>
+                      {/* Expand toggle */}
+                      <div className="phm-card-expand">
+                        <div className={`phm-expand-icon${isExpanded ? ' rotated' : ''}`}>
+                          <ChevronRight size={16} />
+                        </div>
+                      </div>
+
+                      {/* Main info */}
+                      <div className="phm-card-info">
                         {isEditing ? (
-                          <div className="phm-rename-row">
+                          <div className="phm-rename-inline">
                             <input
-                              className="phm-rename-input"
+                              className="phm-rename-field"
                               value={editingName}
                               onChange={(e) => setEditingName(e.target.value)}
                               onKeyDown={(e) => { if (e.key === 'Enter') handleConfirmRename(); if (e.key === 'Escape') setEditingPlanId(null); }}
                               autoFocus
                               onClick={(e) => e.stopPropagation()}
                             />
-                            <button className="btn btn-sm btn-primary" onClick={(e) => { e.stopPropagation(); handleConfirmRename(); }}>
-                              <Check size={12} />
+                            <button className="phm-rename-ok" onClick={(e) => { e.stopPropagation(); handleConfirmRename(); }}>
+                              <Check size={13} />
                             </button>
-                            <button className="btn btn-sm btn-ghost" onClick={(e) => { e.stopPropagation(); setEditingPlanId(null); }}>
-                              <X size={12} />
+                            <button className="phm-rename-cancel" onClick={(e) => { e.stopPropagation(); setEditingPlanId(null); }}>
+                              <X size={13} />
                             </button>
                           </div>
                         ) : (
-                          <div className="plan-history-title">{plan.description || '未命名方案'}</div>
-                        )}
-
-                        <div className="plan-history-meta">
-                          <span className={`phm-platform-badge ${plan.platform === 'mobile' ? 'mobile' : 'pc'}`}>
-                            {plan.platform === 'mobile' ? <Smartphone size={11} /> : <Monitor size={11} />}
-                            {plan.platform === 'mobile' ? '移动端' : 'PC端'}
-                          </span>
-                          <span className="phm-meta-sep">·</span>
-                          <span>{pageCount} 个页面</span>
-                          {plan.timestamp && (
-                            <>
-                              <span className="phm-meta-sep">·</span>
-                              <span className="phm-meta-time">{plan.timestamp}</span>
-                            </>
-                          )}
-                          {isLoaded && (
-                            <span className="phm-loaded-badge"><Check size={10} />当前</span>
-                          )}
-                        </div>
-
-                        {/* Style tags */}
-                        {plan.selectedStyles?.length > 0 && viewStyle === 'card' && (
-                          <div className="plan-history-styles">
-                            {plan.selectedStyles.map((s) => (
-                              <span key={s} className="phm-style-tag">{styleLabels[s] || s}</span>
-                            ))}
-                          </div>
+                          <>
+                            <div className="phm-card-title-row">
+                              <span className="phm-card-title">{plan.description || '未命名方案'}</span>
+                              {isLoaded && <span className="phm-active-badge">当前方案</span>}
+                            </div>
+                            <div className="phm-card-meta">
+                              <span className={`phm-badge ${plan.platform === 'mobile' ? 'mobile' : 'pc'}`}>
+                                {plan.platform === 'mobile' ? <Smartphone size={10} /> : <Monitor size={10} />}
+                                {plan.platform === 'mobile' ? '移动端' : 'PC端'}
+                              </span>
+                              <span className="phm-meta-dot" />
+                              <span className="phm-meta-text">{pageCount} 页面</span>
+                              {plan.timestamp && (
+                                <>
+                                  <span className="phm-meta-dot" />
+                                  <span className="phm-meta-text muted">{plan.timestamp}</span>
+                                </>
+                              )}
+                            </div>
+                          </>
                         )}
                       </div>
 
-                      <div className="plan-history-actions" onClick={(e) => e.stopPropagation()}>
+                      {/* Style pills */}
+                      {plan.selectedStyles?.length > 0 && viewStyle === 'card' && (
+                        <div className="phm-style-pills" onClick={(e) => e.stopPropagation()}>
+                          {plan.selectedStyles.slice(0, 3).map((s) => {
+                            const c = styleColors[s] || styleColors.business;
+                            return (
+                              <span
+                                key={s}
+                                className="phm-style-pill"
+                                style={{ background: c.bg, color: c.fg, borderColor: c.border }}
+                              >
+                                {styleLabels[s] || s}
+                              </span>
+                            );
+                          })}
+                          {plan.selectedStyles.length > 3 && (
+                            <span className="phm-style-pill more">+{plan.selectedStyles.length - 3}</span>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Actions */}
+                      <div className={`phm-card-actions${isHovered || isExpanded ? ' visible' : ''}`} onClick={(e) => e.stopPropagation()}>
                         <button
-                          className={`btn btn-sm ${isLoaded ? 'btn-ghost' : 'btn-primary'}`}
+                          className={`phm-action-btn primary${isLoaded ? ' loaded' : ''}`}
                           onClick={() => onLoadPlan(plan)}
                           disabled={isLoaded}
-                          title={isLoaded ? '当前方案' : '加载并在右侧查看线框预览'}
+                          title={isLoaded ? '当前方案' : '加载方案'}
                         >
                           {isLoaded ? <><Check size={13} />已加载</> : <><Play size={13} />加载</>}
                         </button>
-                        <div className="phm-more-actions">
-                          <button className="btn btn-icon btn-sm" onClick={() => handleStartRename(plan)} title="重命名">
-                            <Pencil size={13} />
-                          </button>
-                          <button className="btn btn-icon btn-sm" onClick={() => handleDuplicate(plan)} title="复制方案">
-                            <Copy size={13} />
-                          </button>
-                          <button className="btn btn-icon btn-sm phm-delete-btn" onClick={() => onDeletePlan(plan.id)} title="删除">
-                            <Trash2 size={13} />
-                          </button>
-                        </div>
+                        <button className="phm-action-icon" onClick={() => handleStartRename(plan)} title="重命名">
+                          <Pencil size={13} />
+                        </button>
+                        <button className="phm-action-icon" onClick={() => handleDuplicate(plan)} title="复制">
+                          <Copy size={13} />
+                        </button>
+                        <button className="phm-action-icon danger" onClick={() => onDeletePlan(plan.id)} title="删除">
+                          <Trash2 size={13} />
+                        </button>
                       </div>
                     </div>
 
                     {/* Expanded detail */}
                     {isExpanded && viewStyle === 'card' && (
-                      <div className="plan-history-detail">
+                      <div className="phm-card-detail">
                         {/* Wireframe thumbnails */}
                         {wireframes.length > 0 && (
-                          <div className="phm-wireframe-section">
-                            <div className="phm-section-label">
-                              <Eye size={12} />线框预览
+                          <div className="phm-detail-section">
+                            <div className="phm-detail-label">
+                              <Eye size={12} />
+                              <span>线框预览</span>
+                              <span className="phm-detail-count">{wireframes.length} 页</span>
                             </div>
-                            <div className="phm-wireframe-grid">
+                            <div className="phm-thumb-grid">
                               {plan.plannedPages.map((page, i) => (
-                                <div key={i} className="phm-wireframe-thumb">
+                                <div key={i} className="phm-thumb">
                                   <div className="phm-thumb-frame">
                                     {wireframes[i] ? (
                                       <iframe
@@ -330,41 +381,51 @@ export default function PlansHistoryModal({
                                         tabIndex={-1}
                                       />
                                     ) : (
-                                      <div className="phm-thumb-placeholder">
+                                      <div className="phm-thumb-empty">
                                         <span>{i + 1}</span>
                                       </div>
                                     )}
                                   </div>
-                                  <div className="phm-thumb-label">{page.name}</div>
+                                  <span className="phm-thumb-name">{page.name}</span>
                                 </div>
                               ))}
                             </div>
                           </div>
                         )}
 
-                        {/* Page details */}
+                        {/* Page structure */}
                         {plan.plannedPages?.length > 0 && (
-                          <div className="phm-pages-detail">
-                            <div className="phm-section-label">
-                              <LayoutGrid size={12} />页面详情
+                          <div className="phm-detail-section">
+                            <div className="phm-detail-label">
+                              <FileCode size={12} />
+                              <span>页面结构</span>
                             </div>
-                            <div className="phm-pages-accordion">
+                            <div className="phm-pages">
                               {plan.plannedPages.map((page, i) => (
-                                <div key={i} className="phm-page-detail-item">
-                                  <div className="phm-page-detail-header">
-                                    <span className="phm-page-num">{i + 1}</span>
-                                    <span className="phm-page-name">{page.name}</span>
-                                    {page.description && <span className="phm-page-desc">{page.description}</span>}
+                                <div key={i} className="phm-page-row">
+                                  <div className="phm-page-row-header">
+                                    <span className="phm-page-idx">{i + 1}</span>
+                                    <div className="phm-page-info">
+                                      <span className="phm-page-name">{page.name}</span>
+                                      {page.description && <span className="phm-page-desc">{page.description}</span>}
+                                    </div>
+                                    {page.route && <span className="phm-page-route">{page.route}</span>}
                                   </div>
                                   {page.sections?.length > 0 && (
-                                    <div className="phm-page-sections">
+                                    <div className="phm-page-blocks">
                                       {page.sections.map((sec, si) => (
-                                        <div key={si} className="phm-section-item">
-                                          <span className="phm-section-name">{sec.name}</span>
+                                        <div key={si} className="phm-block">
+                                          <div className="phm-block-name">
+                                            <span className="phm-block-dot" />
+                                            {sec.name}
+                                            {sec.elements?.length > 0 && (
+                                              <span className="phm-block-count">{sec.elements.length}</span>
+                                            )}
+                                          </div>
                                           {sec.elements?.length > 0 && (
-                                            <div className="phm-section-elements">
+                                            <div className="phm-block-elements">
                                               {sec.elements.map((el, ei) => (
-                                                <span key={ei} className="phm-element-tag">{el}</span>
+                                                <span key={ei} className="phm-el-tag">{el}</span>
                                               ))}
                                             </div>
                                           )}
@@ -375,7 +436,9 @@ export default function PlansHistoryModal({
                                   {page.interactions?.length > 0 && (
                                     <div className="phm-page-interactions">
                                       {page.interactions.map((inter, ii) => (
-                                        <span key={ii} className="phm-interaction-item">→ {inter}</span>
+                                        <span key={ii} className="phm-interact">
+                                          <Zap size={9} />{inter}
+                                        </span>
                                       ))}
                                     </div>
                                   )}
@@ -385,11 +448,16 @@ export default function PlansHistoryModal({
                           </div>
                         )}
 
-                        {/* Style spec preview */}
+                        {/* Style spec */}
                         {plan.styleSpec && (
-                          <div className="phm-style-spec-section">
-                            <div className="phm-section-label">设计规范</div>
-                            <div className="phm-style-spec-preview">{plan.styleSpec.slice(0, 200)}{plan.styleSpec.length > 200 ? '...' : ''}</div>
+                          <div className="phm-detail-section">
+                            <div className="phm-detail-label">
+                              <Palette size={12} />
+                              <span>设计规范</span>
+                            </div>
+                            <div className="phm-spec-preview">
+                              {plan.styleSpec.slice(0, 300)}{plan.styleSpec.length > 300 ? '...' : ''}
+                            </div>
                           </div>
                         )}
                       </div>
@@ -397,16 +465,14 @@ export default function PlansHistoryModal({
 
                     {/* Compact expanded */}
                     {isExpanded && viewStyle === 'compact' && (
-                      <div className="plan-history-detail compact">
-                        <div className="phm-compact-pages">
-                          {plan.plannedPages?.map((page, i) => (
-                            <div key={i} className="phm-compact-page">
-                              <span className="phm-compact-num">{i + 1}</span>
-                              <span className="phm-compact-name">{page.name}</span>
-                              <span className="phm-compact-desc">{page.description || ''}</span>
-                            </div>
-                          ))}
-                        </div>
+                      <div className="phm-card-detail compact">
+                        {plan.plannedPages?.map((page, i) => (
+                          <div key={i} className="phm-compact-row">
+                            <span className="phm-compact-idx">{i + 1}</span>
+                            <span className="phm-compact-name">{page.name}</span>
+                            <span className="phm-compact-desc">{page.description || ''}</span>
+                          </div>
+                        ))}
                       </div>
                     )}
                   </div>
@@ -419,7 +485,8 @@ export default function PlansHistoryModal({
         {/* Footer */}
         {totalPlans > 0 && (
           <div className="phm-footer">
-            <span className="phm-footer-hint">点击方案卡片展开查看详细线框预览和页面结构</span>
+            <Sparkles size={11} />
+            <span>点击卡片展开查看线框预览和页面结构详情</span>
           </div>
         )}
       </div>

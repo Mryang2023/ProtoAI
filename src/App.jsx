@@ -8,8 +8,11 @@ import RefinePanel from './components/RefinePanel.jsx';
 import AISettingsModal from './components/AISettingsModal.jsx';
 import VersionHistory from './components/VersionHistory.jsx';
 import PlansHistoryModal from './components/PlansHistoryModal.jsx';
+import QrPreviewModal from './components/QrPreviewModal.jsx';
+import TemplateLibrary from './components/TemplateLibrary.jsx';
 import { generateAllWireframes } from './components/PlanPreview.jsx';
-import { planProject, generateProjectPages, generateSinglePage, readFileContents, capturePageAsImage, refinePage, regenerateSinglePage, buildStyleSpec, pageFileName } from './aiService.js';
+import { planProject, generateProjectPages, generateSinglePage, readFileContents, capturePageAsImage, refinePage, refineRegion, regenerateSinglePage, buildStyleSpec, pageFileName } from './aiService.js';
+import { htmlToReactComponent, htmlToTailwind, htmlToCleanHtml } from './codeExport.js';
 
 const BUILTIN_PROVIDER_NAMES = { openai: 'OpenAI', claude: 'Claude', custom: 'Mimo' };
 
@@ -186,6 +189,9 @@ export default function App() {
   const [rightViewMode, setRightViewMode] = useState('empty'); // 'empty' | 'plan' | 'prototype'
   const [wireframeHtmls, setWireframeHtmls] = useState([]);
   const [showPlansHistory, setShowPlansHistory] = useState(false);
+  const [showQrPreview, setShowQrPreview] = useState(false);
+  const [showTemplateLibrary, setShowTemplateLibrary] = useState(false);
+  const [showExportModal, setShowExportModal] = useState(false);
 
   // Wrapper setter for pages that updates current project
   const setPages = useCallback((valueOrFn) => {
@@ -213,6 +219,9 @@ export default function App() {
   const [generateProgress, setGenerateProgress] = useState('');
   const [progressCurrent, setProgressCurrent] = useState(0);
   const [progressTotal, setProgressTotal] = useState(0);
+  // Streaming preview: shows partial HTML while AI is generating
+  const [streamingHtml, setStreamingHtml] = useState('');
+  const [streamingPageIndex, setStreamingPageIndex] = useState(null);
 
   // Flag: user manually selected a page to preview during generation (ref to avoid stale closures)
   const userSelectedPageRef = useRef(false);
@@ -467,6 +476,8 @@ export default function App() {
     isGeneratingRef.current = true;
     setGenerateError('');
     userSelectedPageRef.current = false;
+    setStreamingHtml('');
+    setStreamingPageIndex(0);
 
     const isDualMode = targetPlatform === 'both' && pcPages && mobilePages;
 
@@ -488,6 +499,7 @@ export default function App() {
 
         // Phase 1: PC pages
         setGenerateProgress(`正在生成PC端页面 (0/${totalPc})...`);
+        setStreamingPageIndex(0);
         const pcResult = await generateProjectPages(
           activeProvider, providerConfig, pcPages, plannedStyleSpec,
           contentDesc, fileContents, selectedStyles, styleDesc, 'pc',
@@ -500,13 +512,16 @@ export default function App() {
               next[index] = pageResult;
               return next;
             });
-          }
+          },
+          (html) => setStreamingHtml(html)
         );
         setPcGeneratedPages(pcResult.pages);
 
         // Phase 2: Mobile pages
         setGenerateProgress(`正在生成移动端页面 (0/${totalMobile})...`);
-        setPages([]); // reset for mobile phase display
+        setPages([]);
+        setStreamingHtml('');
+        setStreamingPageIndex(0);
         const mobileResult = await generateProjectPages(
           activeProvider, providerConfig, mobilePages, plannedStyleSpec,
           contentDesc, fileContents, selectedStyles, styleDesc, 'mobile',
@@ -519,7 +534,8 @@ export default function App() {
               next[index] = pageResult;
               return next;
             });
-          }
+          },
+          (html) => setStreamingHtml(html)
         );
         setMobileGeneratedPages(mobileResult.pages);
 
@@ -564,6 +580,7 @@ export default function App() {
         setCurrentPageIndex(0);
 
         let completedCount = 0;
+        setStreamingPageIndex(0);
         const result = await generateProjectPages(
           activeProvider, providerConfig, plannedPages, plannedStyleSpec,
           contentDesc, fileContents, selectedStyles, styleDesc, detectedPlatform,
@@ -576,7 +593,8 @@ export default function App() {
               next[index] = pageResult;
               return next;
             });
-          }
+          },
+          (html) => setStreamingHtml(html)
         );
 
         setPages(result.pages);
@@ -609,6 +627,8 @@ export default function App() {
       setGenerateProgress('');
       setProgressCurrent(0);
       setProgressTotal(0);
+      setStreamingHtml('');
+      setStreamingPageIndex(null);
       setRightViewMode('prototype');
       userSelectedPageRef.current = false;
     }
@@ -1032,6 +1052,88 @@ export default function App() {
     setRightViewMode('prototype');
   }, [updateCurrentProject]);
 
+  // ── Template Selection ──
+
+  const handleSelectTemplate = useCallback((template) => {
+    // Pre-fill the content description with the template's prompt
+    updateCurrentProject({ contentDesc: template.prompt });
+    setShowTemplateLibrary(false);
+  }, [updateCurrentProject]);
+
+  // ── Code Export ──
+
+  const handleExportAsReact = useCallback(() => {
+    if (!generatedHtml) return;
+    const page = pages[currentPageIndex];
+    const componentName = (page?.name || 'ProtoPage').replace(/[^a-zA-Z0-9]/g, '');
+    const jsx = htmlToReactComponent(generatedHtml, componentName);
+    const blob = new Blob([jsx], { type: 'text/javascript' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${componentName}.jsx`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }, [generatedHtml, pages, currentPageIndex]);
+
+  const handleExportAsTailwind = useCallback(() => {
+    if (!generatedHtml) return;
+    const page = pages[currentPageIndex];
+    const twHtml = htmlToTailwind(htmlToCleanHtml(generatedHtml, page?.name || 'ProtoAI'));
+    const blob = new Blob([twHtml], { type: 'text/html' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${(page?.name || 'page').replace(/\s+/g, '_')}_tailwind.html`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }, [generatedHtml, pages, currentPageIndex]);
+
+  const handleExportCleanHtml = useCallback(() => {
+    if (!generatedHtml) return;
+    const page = pages[currentPageIndex];
+    const cleanHtml = htmlToCleanHtml(generatedHtml, page?.name || 'ProtoAI');
+    const blob = new Blob([cleanHtml], { type: 'text/html' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${(page?.name || 'page').replace(/\s+/g, '_')}_clean.html`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }, [generatedHtml, pages, currentPageIndex]);
+
+  // ── Region-based Refine ──
+
+  const handleRefineRegion = useCallback(async (regionHtml, instruction) => {
+    if (isRefining || !generatedHtml) return;
+    setMessages((prev) => [...prev, { role: 'user', content: `[局部修改] ${instruction}` }]);
+    setIsRefining(true);
+
+    try {
+      const providerConfig = aiConfig[activeProvider] || {};
+      const refinedHtml = await refineRegion(activeProvider, providerConfig, generatedHtml, regionHtml, instruction);
+      setPages((prev) => {
+        const next = [...prev];
+        if (next[currentPageIndex]) {
+          next[currentPageIndex] = { ...next[currentPageIndex], html: refinedHtml };
+        }
+        return next;
+      });
+      setCode(refinedHtml);
+      setMessages((prev) => [...prev, {
+        role: 'ai',
+        content: `已对选中区域执行「${instruction}」修改。你可以在右侧预览查看变化。`,
+      }]);
+    } catch (err) {
+      setMessages((prev) => [...prev, {
+        role: 'ai',
+        content: `局部修改失败：${err.message}。请检查 AI 模型配置后重试。`,
+      }]);
+    } finally {
+      setIsRefining(false);
+    }
+  }, [isRefining, generatedHtml, aiConfig, activeProvider, currentPageIndex]);
+
   // ── Other ──
 
   const handleRefresh = useCallback(() => {
@@ -1067,6 +1169,11 @@ export default function App() {
         onOpenPlansHistory={() => setShowPlansHistory(true)}
         onExport={handleExport}
         onExportAll={handleExportAll}
+        onExportAsReact={handleExportAsReact}
+        onExportAsTailwind={handleExportAsTailwind}
+        onExportClean={handleExportCleanHtml}
+        onOpenQrPreview={() => setShowQrPreview(true)}
+        onOpenTemplateLibrary={() => setShowTemplateLibrary(true)}
         hasMultiplePages={pages.filter((p) => p?.html).length > 1}
         theme={theme}
         onToggleTheme={toggleTheme}
@@ -1108,12 +1215,14 @@ export default function App() {
           isDualPlatform={!!pcPages && !!mobilePages}
           activePlanPlatform={activePlanPlatform}
           onSwitchPlanPlatform={handleSwitchPlanPlatform}
+          onOpenTemplateLibrary={() => setShowTemplateLibrary(true)}
         />
 
         <RightPanel
           generatedHtml={generatedHtml}
           isGenerating={isGenerating}
           detectedPlatform={detectedPlatform}
+          streamingHtml={streamingHtml}
           onRefresh={handleRefresh}
           onExport={handleExport}
           onExportAll={handleExportAll}
@@ -1155,6 +1264,7 @@ export default function App() {
               onCodeChange={handleCodeChange}
               messages={messages}
               onSendMessage={handleSendMessage}
+              onRefineRegion={handleRefineRegion}
             />
           }
         />
@@ -1190,6 +1300,20 @@ export default function App() {
           onDuplicatePlan={handleDuplicatePlan}
           onRenamePlan={handleRenamePlan}
           onClose={() => setShowPlansHistory(false)}
+        />
+      )}
+
+      {showQrPreview && (
+        <QrPreviewModal
+          pages={pages.filter(p => p?.html)}
+          onClose={() => setShowQrPreview(false)}
+        />
+      )}
+
+      {showTemplateLibrary && (
+        <TemplateLibrary
+          onSelect={handleSelectTemplate}
+          onClose={() => setShowTemplateLibrary(false)}
         />
       )}
     </div>

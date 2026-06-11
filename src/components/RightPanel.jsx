@@ -15,6 +15,7 @@ export default function RightPanel({
   isRefining, isRegenerating, onRegeneratePage,
   rightViewMode = 'prototype', wireframeHtmls = [],
   onViewModeChange,
+  streamingHtml = '',
 }) {
   const [device, setDevice] = useState('desktop');
   const [zoom, setZoom] = useState(100);
@@ -45,8 +46,11 @@ export default function RightPanel({
   }, [detectedPlatform]);
 
   // Determine which HTML to show in the preview
+  // During generation: user-selected page > streaming partial > empty (progress cards)
   const previewHtml = isGenerating
-    ? (userPreviewIndex !== null ? (pages[userPreviewIndex]?.html || '') : '')
+    ? (userPreviewIndex !== null
+        ? (pages[userPreviewIndex]?.html || '')
+        : (streamingHtml || ''))
     : (rightViewMode === 'prototype' ? generatedHtml : '');
 
   // Current wireframe HTML for plan mode
@@ -149,6 +153,7 @@ export default function RightPanel({
               </div>
               <span className="compact-progress-text">
                 {progressCurrent}/{progressTotal} {progress || '准备中...'}
+                {streamingHtml && !userPreviewIndex && <span style={{ color: '#22c55e', marginLeft: 8 }}>● 实时预览中</span>}
               </span>
               {userPreviewIndex !== null && (
                 <button className="compact-progress-back" onClick={() => setUserPreviewIndex(null)}>

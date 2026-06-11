@@ -13,6 +13,9 @@ import {
   FolderOpen,
   Check,
   Layers,
+  QrCode,
+  Layout,
+  Code2,
 } from 'lucide-react';
 
 export default function TopBar({
@@ -27,6 +30,11 @@ export default function TopBar({
   onOpenPlansHistory,
   onExport,
   onExportAll,
+  onExportAsReact,
+  onExportAsTailwind,
+  onExportClean,
+  onOpenQrPreview,
+  onOpenTemplateLibrary,
   hasMultiplePages,
   theme,
   onToggleTheme,
@@ -49,6 +57,9 @@ export default function TopBar({
 
   const handleExportCurrent = () => { onExport(); setShowExportMenu(false); };
   const handleExportAll = () => { onExportAll(); setShowExportMenu(false); };
+  const handleExportReact = () => { onExportAsReact?.(); setShowExportMenu(false); };
+  const handleExportTailwind = () => { onExportAsTailwind?.(); setShowExportMenu(false); };
+  const handleExportClean = () => { onExportClean?.(); setShowExportMenu(false); };
 
   const handleSwitchProject = (id) => {
     onSwitchProject(id);
@@ -167,11 +178,24 @@ export default function TopBar({
               <div className="export-dropdown" data-component="Export Menu" data-od-id="export-menu">
                 <button className="export-dropdown-item" onClick={handleExportCurrent}>
                   <FileDown size={15} />
-                  <span>导出当前页</span>
+                  <span>导出当前页 HTML</span>
                 </button>
                 <button className="export-dropdown-item" onClick={handleExportAll}>
                   <Archive size={15} />
                   <span>导出全部页面 (ZIP)</span>
+                </button>
+                <div style={{ height: 1, background: 'var(--border-color, #e5e7eb)', margin: '4px 0' }} />
+                <button className="export-dropdown-item" onClick={handleExportReact}>
+                  <Code2 size={15} />
+                  <span>导出为 React 组件</span>
+                </button>
+                <button className="export-dropdown-item" onClick={handleExportTailwind}>
+                  <Layout size={15} />
+                  <span>导出为 Tailwind HTML</span>
+                </button>
+                <button className="export-dropdown-item" onClick={handleExportClean}>
+                  <FileDown size={15} />
+                  <span>导出纯净 HTML（无导航栏）</span>
                 </button>
               </div>
             )}
@@ -185,6 +209,29 @@ export default function TopBar({
           >
             <Download size={15} />
             导出
+          </button>
+        )}
+
+        {onOpenQrPreview && (
+          <button
+            className="btn btn-ghost btn-sm"
+            onClick={onOpenQrPreview}
+            title="手机扫码预览"
+            aria-label="手机扫码预览"
+          >
+            <QrCode size={15} />
+          </button>
+        )}
+
+        {onOpenTemplateLibrary && (
+          <button
+            className="btn btn-ghost btn-sm"
+            onClick={onOpenTemplateLibrary}
+            title="页面模板库"
+            aria-label="页面模板库"
+          >
+            <Layout size={15} />
+            模板
           </button>
         )}
 

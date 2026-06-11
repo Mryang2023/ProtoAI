@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback } from 'react';
-import { Sparkles, FileText, Palette, Bot, Check, X, LayoutList, Trash2, Play, Monitor, Smartphone, ChevronDown, Plus, RotateCcw, Eye, Zap, Loader2, CheckCircle2, AlertCircle, ArrowRight } from 'lucide-react';
+import { Sparkles, FileText, Palette, Bot, Check, X, LayoutList, Trash2, Play, Monitor, Smartphone, ChevronDown, Plus, RotateCcw, Eye, Zap, Loader2, CheckCircle2, AlertCircle, ArrowRight, Layout } from 'lucide-react';
 import StyleTags from './StyleTags.jsx';
 import FileUpload from './FileUpload.jsx';
 
@@ -37,6 +37,7 @@ export default function LeftPanel({
   isDualPlatform,
   activePlanPlatform,
   onSwitchPlanPlatform,
+  onOpenTemplateLibrary,
 }) {
   const [panelWidth, setPanelWidth] = useState(400);
   const [stylesExpanded, setStylesExpanded] = useState(false);
@@ -391,19 +392,32 @@ export default function LeftPanel({
         )}
 
         {!plannedPages ? (
-          <button
-            className="btn-generate"
-            onClick={onPlan}
-            disabled={isGenerating || !hasInput}
-            aria-label="规划方案"
-            style={{ marginTop: 'var(--sp-3)' }}
-          >
-            {isGenerating ? (
-              <><span className="spinner" />分析中...</>
-            ) : (
-              <><Sparkles size={18} />规划方案{targetPlatform === 'both' ? '（双端）' : ''}</>
+          <>
+            {onOpenTemplateLibrary && (
+              <button
+                className="btn btn-ghost btn-sm"
+                onClick={onOpenTemplateLibrary}
+                disabled={isGenerating}
+                style={{ marginTop: 'var(--sp-3)', width: '100%', justifyContent: 'center', gap: 8 }}
+              >
+                <Layout size={16} />
+                从模板库选择
+              </button>
             )}
-          </button>
+            <button
+              className="btn-generate"
+              onClick={onPlan}
+              disabled={isGenerating || !hasInput}
+              aria-label="规划方案"
+              style={{ marginTop: 'var(--sp-2)' }}
+            >
+              {isGenerating ? (
+                <><span className="spinner" />分析中...</>
+              ) : (
+                <><Sparkles size={18} />规划方案{targetPlatform === 'both' ? '（双端）' : ''}</>
+              )}
+            </button>
+          </>
         ) : null}
       </div>
 

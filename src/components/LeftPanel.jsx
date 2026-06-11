@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback } from 'react';
-import { Sparkles, FileText, Palette, Bot, Check, X, LayoutList, History, Trash2, Play, Monitor, Smartphone, ChevronDown, Plus } from 'lucide-react';
+import { Sparkles, FileText, Palette, Bot, Check, X, LayoutList, Trash2, Play, Monitor, Smartphone, ChevronDown, Plus, RotateCcw, Eye } from 'lucide-react';
 import StyleTags from './StyleTags.jsx';
 import FileUpload from './FileUpload.jsx';
 
@@ -23,13 +23,13 @@ export default function LeftPanel({
   files,
   onFilesAdd,
   onFileRemove,
-  savedPlans = [],
-  loadedPlanId,
-  onLoadPlan,
-  onDeletePlan,
+  rightViewMode,
+  onViewPlan,
+  onViewPagePrototype,
+  onRegeneratePage,
+  isRegenerating,
 }) {
   const [panelWidth, setPanelWidth] = useState(400);
-  const [showSavedPlans, setShowSavedPlans] = useState(false);
   const [stylesExpanded, setStylesExpanded] = useState(false);
   const isResizing = useRef(false);
 
@@ -129,13 +129,13 @@ export default function LeftPanel({
           )}
         </section>
 
-        {/* Plan preview */}
+        {/* Plan summary + page list */}
         {plannedPages && plannedPages.length > 0 && (
-          <section className="plan-preview" data-component="Plan Preview" data-od-id="plan-preview">
+          <section className="plan-preview" data-component="Plan Summary" data-od-id="plan-summary">
             <div className="panel-section-header">
               <LayoutList size={14} style={{ color: isGenerating ? 'var(--fg-muted)' : 'var(--accent)' }} />
               <span className="section-label" style={{ color: isGenerating ? 'var(--fg-muted)' : 'var(--accent)' }}>
-                {isGenerating ? '生成进度' : '生成方案'}
+                {isGenerating ? '生成进度' : '页面方案'}
               </span>
               <span style={{
                 marginLeft: 'auto',
@@ -154,7 +154,7 @@ export default function LeftPanel({
               </span>
             </div>
             {!isGenerating && (
-              <p className="section-hint">AI 规划了 {plannedPages.length} 个页面，确认后开始生成</p>
+              <p className="section-hint">{plannedPages.length} 个页面 · 点击页面名称查看原型</p>
             )}
             <div className="plan-pages-list">
               {plannedPages.map((page, i) => {
@@ -162,8 +162,16 @@ export default function LeftPanel({
                 const isDone = pageData?.html && !pageData?.error;
                 const isFailed = pageData?.error;
                 const isCurrent = isGenerating && !isDone && !isFailed;
+                const isActive = !isGenerating && rightViewMode === 'prototype' && isDone;
                 return (
-                  <div key={i} className={`plan-page-item${isDone ? ' done' : ''}${isCurrent ? ' generating' : ''}${isFailed ? ' failed' : ''}`}>
+                  <div
+                    key={i}
+                    className={`plan-page-item${isDone ? ' done' : ''}${isCurrent ? ' generating' : ''}${isFailed ? ' failed' : ''}${isActive ? ' active-prototype' : ''}`}
+                    onClick={() => {
+                      if (isDone && onViewPagePrototype) onViewPagePrototype(i);
+                    }}
+                    style={isDone && onViewPagePrototype ? { cursor: 'pointer' } : undefined}
+                  >
                     <span className={`plan-page-index${isDone ? ' done' : ''}${isCurrent ? ' generating' : ''}${isFailed ? ' failed' : ''}`}>
                       {isDone ? '✓' : isFailed ? '✗' : i + 1}
                     </span>
@@ -172,78 +180,41 @@ export default function LeftPanel({
                       {page.description && <span className="plan-page-desc">{page.description}</span>}
                     </div>
                     {isCurrent && <span className="plan-page-status">生成中...</span>}
-                    {isDone && <span className="plan-page-status done">已完成</span>}
+                    {isDone && !isGenerating && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                        <button
+                          className="btn btn-icon btn-sm"
+                          onClick={(e) => { e.stopPropagation(); if (onViewPlan) onViewPlan(); }}
+                          title="查看方案"
+                          style={{ color: 'var(--fg-muted)', padding: 2 }}
+                        >
+                          <Eye size={12} />
+                        </button>
+                        <button
+                          className="btn btn-icon btn-sm"
+                          onClick={(e) => { e.stopPropagation(); if (onRegeneratePage) onRegeneratePage(); }}
+                          disabled={isRegenerating}
+                          title="重新生成"
+                          style={{ color: 'var(--fg-muted)', padding: 2 }}
+                        >
+                          <RotateCcw size={12} />
+                        </button>
+                      </div>
+                    )}
+                    {isDone && isGenerating && <span className="plan-page-status done">已完成</span>}
                     {isFailed && <span className="plan-page-status failed">失败</span>}
                   </div>
                 );
               })}
             </div>
-            {!isGenerating && (
+            {!isGenerating && rightViewMode === 'plan' && (
               <div className="plan-actions">
                 <button className="btn btn-primary plan-confirm-btn" onClick={onConfirmPlan}>
-                  <Check size={15} />确认，开始生成
+                  <Check size={15} />确认方案，开始生成
                 </button>
                 <button className="btn btn-ghost btn-sm" onClick={onCancelPlan}>
                   <X size={14} />取消
                 </button>
-              </div>
-            )}
-          </section>
-        )}
-
-        {/* Saved plans history */}
-        {savedPlans.length > 0 && !isGenerating && (
-          <section className="saved-plans-section" data-component="Saved Plans">
-            <div
-              className="panel-section-header"
-              style={{ cursor: 'pointer', userSelect: 'none' }}
-              onClick={() => setShowSavedPlans((v) => !v)}
-            >
-              <History size={14} style={{ color: 'var(--fg-muted)' }} />
-              <span className="section-label">历史方案 ({savedPlans.length})</span>
-              <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--fg-muted)' }}>
-                {showSavedPlans ? '收起' : '展开'}
-              </span>
-            </div>
-
-            {showSavedPlans && (
-              <div className="saved-plans-list">
-                {savedPlans.map((plan) => {
-                  const isLoaded = loadedPlanId === plan.id;
-                  return (
-                    <div key={plan.id} className={`saved-plan-item${isLoaded ? ' loaded' : ''}`}>
-                      <div className="saved-plan-info">
-                        <span className="saved-plan-desc" title={plan.description}>
-                          {plan.description.length > 30
-                            ? plan.description.slice(0, 30) + '...'
-                            : plan.description}
-                        </span>
-                        <span className="saved-plan-meta">
-                          {plan.plannedPages?.length || 0} 页 · {plan.timestamp}
-                        </span>
-                      </div>
-                      <div className="saved-plan-actions">
-                        <button
-                          className="btn btn-icon btn-sm saved-plan-btn"
-                          onClick={() => onLoadPlan(plan)}
-                          disabled={isLoaded}
-                          title={isLoaded ? '当前方案' : '加载此方案'}
-                          aria-label={`加载方案：${plan.description}`}
-                        >
-                          {isLoaded ? <Check size={13} /> : <Play size={13} />}
-                        </button>
-                        <button
-                          className="btn btn-icon btn-sm saved-plan-btn delete"
-                          onClick={() => onDeletePlan(plan.id)}
-                          title="删除此方案"
-                          aria-label={`删除方案：${plan.description}`}
-                        >
-                          <Trash2 size={13} />
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
               </div>
             )}
           </section>

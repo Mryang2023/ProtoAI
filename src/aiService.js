@@ -284,7 +284,7 @@ function repairHtml(html) {
 
 /**
  * Phase 1: Analyze requirements and plan page structure.
- * Returns { pages: [{name, description, route}], styleSpec: string }
+ * Returns { pages: [{name, description, route, sections, elements, layout, interactions, keyFeatures}], styleSpec: string, platform }
  */
 export async function planProject(provider, config, contentDesc, fileContents, selectedStyles, styleDesc, onProgress) {
   if (!config?.apiKey) throw new Error('请先在设置中配置 AI 模型的 API Key');
@@ -301,7 +301,21 @@ export async function planProject(provider, config, contentDesc, fileContents, s
     {
       "name": "页面名称（中文）",
       "description": "页面功能简述（1-2句话）",
-      "route": "/page-route"
+      "route": "/page-route",
+      "layout": "页面整体布局方式描述，如：顶部导航+左侧边栏+右侧内容区 / 顶部标签栏+单列滚动内容 / 底部tab+卡片列表",
+      "sections": [
+        {
+          "name": "区块名称（如：顶部导航栏、搜索区域、数据卡片列表、操作按钮区）",
+          "description": "该区块包含的内容和功能",
+          "elements": ["具体UI元素1", "具体UI元素2", "具体UI元素3"]
+        }
+      ],
+      "interactions": [
+        "用户在此页面的关键交互行为，如：点击搜索按钮触发筛选、点击卡片跳转到详情页、下拉刷新列表"
+      ],
+      "keyFeatures": [
+        "该页面的核心功能特性，如：实时数据更新、多维度筛选、一键导出"
+      ]
     }
   ]
 }
@@ -315,11 +329,14 @@ platform 判断规则：
 1. 每个页面应有明确的功能职责
 2. route 使用英文小写 kebab-case 格式，以 / 开头
 3. 如果需求较简单（单一页面），可以只返回 1 个页面
-4. 不要输出任何其他内容，只输出 JSON 对象`;
+4. sections 要尽可能详细，列出页面中每个可见的功能区块，每个区块的 elements 要列出具体的UI组件（如：搜索框、筛选标签、数据表格、分页器、按钮等）
+5. interactions 列出用户在此页面的核心操作和反馈
+6. keyFeatures 列出该页面最重要的 2-4 个功能特性
+7. 不要输出任何其他内容，只输出 JSON 对象`;
 
   const userPrompt = buildContextPrompt(contentDesc, fileContents, selectedStyles, styleDesc)
     + '\n\n' + styleSpec
-    + '\n\n请分析以上需求，判断目标平台（mobile 或 pc），并将项目拆分为多个页面。返回严格的 JSON 对象格式，不要输出任何其他内容。';
+    + '\n\n请分析以上需求，判断目标平台（mobile 或 pc），并将项目拆分为多个页面。每个页面要详细描述其区块结构、UI元素和交互。返回严格的 JSON 对象格式，不要输出任何其他内容。';
 
   const rawResponse = await callAI(provider, config, systemPrompt, userPrompt);
 
@@ -343,6 +360,14 @@ platform 判断规则：
       name: p.name || '未命名页面',
       description: p.description || '',
       route: p.route || `/${Math.random().toString(36).slice(2, 8)}`,
+      layout: p.layout || '',
+      sections: Array.isArray(p.sections) ? p.sections.map((s) => ({
+        name: s.name || '',
+        description: s.description || '',
+        elements: Array.isArray(s.elements) ? s.elements : [],
+      })) : [],
+      interactions: Array.isArray(p.interactions) ? p.interactions : [],
+      keyFeatures: Array.isArray(p.keyFeatures) ? p.keyFeatures : [],
     })),
     styleSpec,
   };

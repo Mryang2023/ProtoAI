@@ -7,6 +7,8 @@ import RightPanel from './components/RightPanel.jsx';
 import RefinePanel from './components/RefinePanel.jsx';
 import AISettingsModal from './components/AISettingsModal.jsx';
 import VersionHistory from './components/VersionHistory.jsx';
+import PlansHistoryModal from './components/PlansHistoryModal.jsx';
+import { generateAllWireframes } from './components/PlanPreview.jsx';
 import { planProject, generateProjectPages, readFileContents, capturePageAsImage, refinePage, regenerateSinglePage, buildStyleSpec, pageFileName } from './aiService.js';
 
 const BUILTIN_PROVIDER_NAMES = { openai: 'OpenAI', claude: 'Claude', custom: 'Mimo' };
@@ -170,6 +172,11 @@ export default function App() {
   const [plannedStyleSpec, setPlannedStyleSpec] = useState('');
   const [detectedPlatform, setDetectedPlatform] = useState('pc');
 
+  // Plan preview & view mode
+  const [rightViewMode, setRightViewMode] = useState('empty'); // 'empty' | 'plan' | 'prototype'
+  const [wireframeHtmls, setWireframeHtmls] = useState([]);
+  const [showPlansHistory, setShowPlansHistory] = useState(false);
+
   // Wrapper setter for pages that updates current project
   const setPages = useCallback((valueOrFn) => {
     if (typeof valueOrFn === 'function') {
@@ -270,6 +277,17 @@ export default function App() {
       setIsGenerating(false);
       setIsRefining(false);
       setIsRegenerating(false);
+      // Reset view mode: show prototype if pages exist, otherwise empty
+      if (proj.pages?.length > 0 && proj.pages.some(p => p?.html)) {
+        setRightViewMode('prototype');
+      } else if (proj.plannedPages?.length > 0) {
+        const wfHtmls = generateAllWireframes(proj.plannedPages, proj.detectedPlatform || 'pc');
+        setWireframeHtmls(wfHtmls);
+        setRightViewMode('plan');
+      } else {
+        setWireframeHtmls([]);
+        setRightViewMode('empty');
+      }
     }
   }, [activeProjectId]);
 
@@ -292,6 +310,8 @@ export default function App() {
     setIsGenerating(false);
     setIsRefining(false);
     setIsRegenerating(false);
+    setWireframeHtmls([]);
+    setRightViewMode('empty');
   }, []);
 
   const handleProjectNameChange = useCallback((newName) => {
@@ -337,6 +357,11 @@ export default function App() {
       setDetectedPlatform(plan.platform || 'pc');
       setGenerateProgress('');
       setIsGenerating(false);
+
+      // Generate wireframe previews for right canvas
+      const wfHtmls = generateAllWireframes(plan.pages, plan.platform || 'pc');
+      setWireframeHtmls(wfHtmls);
+      setRightViewMode('plan');
 
       // Auto-save plan to project
       const planEntry = {
@@ -427,7 +452,8 @@ export default function App() {
       setGenerateProgress('');
       setProgressCurrent(0);
       setProgressTotal(0);
-      setPlannedPages(null); // now hide plan, generation is done
+      // Keep plannedPages for plan-prototype linking, just switch view mode
+      setRightViewMode('prototype');
       userSelectedPageRef.current = false;
     }
   }, [plannedPages, plannedStyleSpec, contentDesc, selectedStyles, styleDesc, aiConfig, activeProvider, uploadedFiles, detectedPlatform, activeProjectId, updateCurrentProject]);
@@ -437,7 +463,45 @@ export default function App() {
     setPlannedPages(null);
     setPlannedStyleSpec('');
     setDetectedPlatform('pc');
+    setWireframeHtmls([]);
+    setRightViewMode('empty');
     updateCurrentProject({ loadedPlanId: null });
+  }, [updateCurrentProject]);
+
+  // View mode switching: plan ↔ prototype
+  const handleViewPlan = useCallback(() => {
+    setRightViewMode('plan');
+  }, []);
+
+  const handleViewPagePrototype = useCallback((pageIndex) => {
+    setCurrentPageIndex(pageIndex);
+    setRightViewMode('prototype');
+    // Sync code state with the selected page
+    setPages((current) => {
+      setCode(current[pageIndex]?.html || '');
+      return current;
+    });
+    setMessages([]);
+  }, []);
+
+  // Generate wireframes for a loaded historical plan
+  const handleLoadPlanWithWireframe = useCallback((plan) => {
+    updateCurrentProject({
+      contentDesc: plan.description || '',
+      selectedStyles: plan.selectedStyles || ['business'],
+      styleDesc: plan.styleDesc || '',
+      loadedPlanId: plan.id,
+    });
+    setPlannedPages(plan.plannedPages);
+    setPlannedStyleSpec(plan.styleSpec || '');
+    setDetectedPlatform(plan.platform || 'pc');
+    setGenerateError('');
+    // Generate wireframes for the loaded plan
+    if (plan.plannedPages?.length > 0) {
+      const wfHtmls = generateAllWireframes(plan.plannedPages, plan.platform || 'pc');
+      setWireframeHtmls(wfHtmls);
+      setRightViewMode('plan');
+    }
   }, [updateCurrentProject]);
 
   // ── Saved Plans ──
@@ -453,6 +517,12 @@ export default function App() {
     setPlannedStyleSpec(plan.styleSpec || '');
     setDetectedPlatform(plan.platform || 'pc');
     setGenerateError('');
+    // Generate wireframes for the loaded plan
+    if (plan.plannedPages?.length > 0) {
+      const wfHtmls = generateAllWireframes(plan.plannedPages, plan.platform || 'pc');
+      setWireframeHtmls(wfHtmls);
+      setRightViewMode('plan');
+    }
   }, [updateCurrentProject]);
 
   const handleDeletePlan = useCallback((planId) => {
@@ -464,6 +534,24 @@ export default function App() {
       updateCurrentProject({ loadedPlanId: null });
     }
   }, [loadedPlanId, activeProjectId, updateCurrentProject]);
+
+  const handleDuplicatePlan = useCallback((plan) => {
+    const currentPlans = projectsRef.current[activeProjectId]?.savedPlans || [];
+    const dup = {
+      ...plan,
+      id: Date.now().toString(36) + Math.random().toString(36).slice(2, 8),
+      description: (plan.description || '未命名方案') + ' (副本)',
+      timestamp: formatTime(new Date()),
+    };
+    updateCurrentProject({ savedPlans: [dup, ...currentPlans] });
+  }, [activeProjectId, updateCurrentProject]);
+
+  const handleRenamePlan = useCallback((planId, newName) => {
+    const currentPlans = projectsRef.current[activeProjectId]?.savedPlans || [];
+    updateCurrentProject({
+      savedPlans: currentPlans.map((p) => p.id === planId ? { ...p, description: newName } : p),
+    });
+  }, [activeProjectId, updateCurrentProject]);
 
   // ── Code & Chat ──
 
@@ -690,6 +778,7 @@ export default function App() {
     setCurrentHistoryId(entry.id);
     setMessages([]);
     setShowHistory(false);
+    setRightViewMode('prototype');
   }, [updateCurrentProject]);
 
   // ── Other ──
@@ -724,6 +813,7 @@ export default function App() {
         onCreateProject={handleCreateProject}
         onOpenSettings={() => setShowSettings(true)}
         onOpenHistory={() => setShowHistory(true)}
+        onOpenPlansHistory={() => setShowPlansHistory(true)}
         onExport={handleExport}
         onExportAll={handleExportAll}
         hasMultiplePages={pages.filter((p) => p?.html).length > 1}
@@ -753,10 +843,11 @@ export default function App() {
           files={uploadedFiles}
           onFilesAdd={handleFilesAdd}
           onFileRemove={handleFileRemove}
-          savedPlans={savedPlans}
-          loadedPlanId={loadedPlanId}
-          onLoadPlan={handleLoadPlan}
-          onDeletePlan={handleDeletePlan}
+          rightViewMode={rightViewMode}
+          onViewPlan={handleViewPlan}
+          onViewPagePrototype={handleViewPagePrototype}
+          onRegeneratePage={handleRegeneratePage}
+          isRegenerating={isRegenerating}
         />
 
         <RightPanel
@@ -775,10 +866,17 @@ export default function App() {
           plannedPages={plannedPages}
           pages={pages}
           currentPageIndex={currentPageIndex}
+          rightViewMode={rightViewMode}
+          wireframeHtmls={wireframeHtmls}
+          onViewModeChange={(mode) => {
+            if (mode === 'plan') {
+              handleViewPlan();
+            } else {
+              handleViewPagePrototype(currentPageIndex);
+            }
+          }}
           onPageChange={(index) => {
             setCurrentPageIndex(index);
-            // During generation, don't update code (panel is hidden anyway).
-            // After generation, use functional update for latest pages.
             if (!isGeneratingRef.current) {
               setPages((current) => {
                 setCode(current[index]?.html || '');
@@ -820,6 +918,18 @@ export default function App() {
           onRestore={handleRestoreFromHistory}
           onExport={handleExportHistory}
           onClose={() => setShowHistory(false)}
+        />
+      )}
+
+      {showPlansHistory && (
+        <PlansHistoryModal
+          savedPlans={savedPlans}
+          loadedPlanId={loadedPlanId}
+          onLoadPlan={handleLoadPlanWithWireframe}
+          onDeletePlan={handleDeletePlan}
+          onDuplicatePlan={handleDuplicatePlan}
+          onRenamePlan={handleRenamePlan}
+          onClose={() => setShowPlansHistory(false)}
         />
       )}
     </div>

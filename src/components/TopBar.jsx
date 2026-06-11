@@ -12,6 +12,7 @@ import {
   Plus,
   FolderOpen,
   Check,
+  Layers,
 } from 'lucide-react';
 
 export default function TopBar({
@@ -23,6 +24,7 @@ export default function TopBar({
   onCreateProject,
   onOpenSettings,
   onOpenHistory,
+  onOpenPlansHistory,
   onExport,
   onExportAll,
   hasMultiplePages,
@@ -129,6 +131,14 @@ export default function TopBar({
           aria-label="切换主题"
         >
           {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
+        </button>
+        <button
+          className="btn btn-icon"
+          onClick={onOpenPlansHistory}
+          title="历史方案"
+          aria-label="历史方案"
+        >
+          <Layers size={18} />
         </button>
         <button
           className="btn btn-icon"

@@ -5,6 +5,43 @@ import { htmlToReactComponent, htmlToTailwind, htmlToCleanHtml } from '../codeEx
 import { generateAllWireframes } from '../components/PlanPreview.jsx';
 import { generateId } from './useProjects.js';
 
+// ── Helpers ──
+
+/** Wrap an export operation with consistent error handling */
+function safeExport(label, fn) {
+  try {
+    const result = fn();
+    return result; // may be a Promise for async functions
+  } catch (err) {
+    console.error(`[ProtoAI] ${label} failed:`, err);
+    alert(`${label}失败：${err.message || '未知错误'}`);
+  }
+}
+
+async function safeExportAsync(label, fn) {
+  try {
+    await fn();
+  } catch (err) {
+    console.error(`[ProtoAI] ${label} failed:`, err);
+    alert(`${label}失败：${err.message || '未知错误'}`);
+  }
+}
+
+/** Validate imported project structure */
+function validateProjectSchema(data) {
+  if (!data || typeof data !== 'object') return '文件内容不是有效的 JSON 对象';
+  if (data.type !== 'protoai_project') return '文件类型不正确，请选择 .protoai.json 文件';
+  if (!data.project || typeof data.project !== 'object') return '缺少项目数据';
+
+  const proj = data.project;
+  if (typeof proj.name !== 'string' && proj.name !== undefined) return '项目名称格式不正确';
+  if (proj.pages && !Array.isArray(proj.pages)) return 'pages 字段格式不正确';
+  if (proj.history && !Array.isArray(proj.history)) return 'history 字段格式不正确';
+  if (proj.savedPlans && !Array.isArray(proj.savedPlans)) return 'savedPlans 字段格式不正确';
+
+  return null; // valid
+}
+
 export default function useExport({
   currentProject, projectName, pages, pagesRef, generatedHtml, currentPageIndex,
   setProjects, setActiveProjectId, setPages,
@@ -21,7 +58,7 @@ export default function useExport({
   // ── Export current page HTML ──
 
   const handleExport = useCallback(() => {
-    try {
+    safeExport('导出 HTML', () => {
       if (!generatedHtml) return;
       const page = pages[currentPageIndex];
       const fileName = page?.name ? `${projectName || 'prototype'}_${page.name}.html` : `${projectName || 'prototype'}.html`;
@@ -30,15 +67,13 @@ export default function useExport({
       const a = document.createElement('a');
       a.href = url; a.download = fileName; a.click();
       URL.revokeObjectURL(url);
-    } catch (err) {
-      console.error('Export failed:', err);
-    }
+    });
   }, [generatedHtml, projectName, pages, currentPageIndex]);
 
   // ── Export all pages as ZIP ──
 
   const handleExportAll = useCallback(async () => {
-    try {
+    await safeExportAsync('导出 ZIP', async () => {
       const validPages = pages.filter((p) => p?.html);
       if (validPages.length === 0) return;
       if (validPages.length === 1) { handleExport(); return; }
@@ -64,17 +99,14 @@ export default function useExport({
       const a = document.createElement('a');
       a.href = url; a.download = `${projectName || 'prototype'}.zip`; a.click();
       URL.revokeObjectURL(url);
-    } catch (err) {
-      console.error('ZIP export failed:', err);
-      alert('导出 ZIP 失败：' + (err.message || '未知错误'));
-    }
+    });
   }, [pages, projectName, handleExport]);
 
   // ── Export current page as image ──
 
   const handleExportImage = useCallback(async () => {
     if (!generatedHtml) return;
-    try {
+    await safeExportAsync('导出图片', async () => {
       setGenerateProgress('正在生成图片...');
       const blob = await capturePageAsImage(generatedHtml, 1440, 900);
       const page = pages[currentPageIndex];
@@ -83,18 +115,14 @@ export default function useExport({
       const a = document.createElement('a');
       a.href = url; a.download = fileName; a.click();
       URL.revokeObjectURL(url);
-    } catch (err) {
-      console.error('Image export failed:', err);
-      alert('导出图片失败：' + (err.message || '请使用 HTML 导出'));
-    } finally {
       setGenerateProgress('');
-    }
+    });
   }, [generatedHtml, projectName, pages, currentPageIndex, setGenerateProgress]);
 
   // ── Export all pages as images ZIP ──
 
   const handleExportAllImages = useCallback(async () => {
-    try {
+    await safeExportAsync('导出图片 ZIP', async () => {
       const validPages = pages.map((p, i) => ({ page: p, originalIndex: i })).filter(({ page }) => page?.html);
       if (validPages.length === 0) return;
       if (validPages.length === 1) { await handleExportImage(); return; }
@@ -118,18 +146,14 @@ export default function useExport({
       const a = document.createElement('a');
       a.href = url; a.download = `${projectName || 'prototype'}_images.zip`; a.click();
       URL.revokeObjectURL(url);
-    } catch (err) {
-      console.error('Image ZIP export failed:', err);
-      alert('导出图片 ZIP 失败：' + (err.message || '未知错误'));
-    } finally {
       setGenerateProgress('');
-    }
+    });
   }, [pages, projectName, handleExportImage, setGenerateProgress]);
 
   // ── Export from history ──
 
-  const handleExportHistory = useCallback((entry, type) => {
-    try {
+  const handleExportHistory = useCallback(async (entry, type) => {
+    await safeExportAsync('导出历史记录', async () => {
       if (!entry?.pages) return;
       const validPages = entry.pages.filter((p) => p?.html);
       if (validPages.length === 0) return;
@@ -149,67 +173,70 @@ export default function useExport({
         if (!page?.html) return;
         zip.file(pageFileName(page, i), page.html);
       });
-      zip.generateAsync({ type: 'blob' }).then((blob) => {
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url; a.download = `${entry.description || 'prototype'}.zip`; a.click();
-        URL.revokeObjectURL(url);
-      });
-    } catch (err) {
-      console.error('History export failed:', err);
-    }
+      const blob = await zip.generateAsync({ type: 'blob' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = `${entry.description || 'prototype'}.zip`; a.click();
+      URL.revokeObjectURL(url);
+    });
   }, []);
 
   // ── Code export: React ──
 
   const handleExportAsReact = useCallback(() => {
-    if (!generatedHtml) return;
-    const page = pages[currentPageIndex];
-    const componentName = (page?.name || 'ProtoPage').replace(/[^a-zA-Z0-9]/g, '');
-    const jsx = htmlToReactComponent(generatedHtml, componentName);
-    const blob = new Blob([jsx], { type: 'text/javascript' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${componentName}.jsx`;
-    a.click();
-    URL.revokeObjectURL(url);
+    safeExport('导出 React 组件', () => {
+      if (!generatedHtml) return;
+      const page = pages[currentPageIndex];
+      const componentName = (page?.name || 'ProtoPage').replace(/[^a-zA-Z0-9]/g, '');
+      const jsx = htmlToReactComponent(generatedHtml, componentName);
+      const blob = new Blob([jsx], { type: 'text/javascript' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${componentName}.jsx`;
+      a.click();
+      URL.revokeObjectURL(url);
+    });
   }, [generatedHtml, pages, currentPageIndex]);
 
   // ── Code export: Tailwind ──
 
   const handleExportAsTailwind = useCallback(() => {
-    if (!generatedHtml) return;
-    const page = pages[currentPageIndex];
-    const twHtml = htmlToTailwind(htmlToCleanHtml(generatedHtml, page?.name || 'ProtoAI'));
-    const blob = new Blob([twHtml], { type: 'text/html' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${(page?.name || 'page').replace(/\s+/g, '_')}_tailwind.html`;
-    a.click();
-    URL.revokeObjectURL(url);
+    safeExport('导出 Tailwind', () => {
+      if (!generatedHtml) return;
+      const page = pages[currentPageIndex];
+      const twHtml = htmlToTailwind(htmlToCleanHtml(generatedHtml, page?.name || 'ProtoAI'));
+      const blob = new Blob([twHtml], { type: 'text/html' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${(page?.name || 'page').replace(/\s+/g, '_')}_tailwind.html`;
+      a.click();
+      URL.revokeObjectURL(url);
+    });
   }, [generatedHtml, pages, currentPageIndex]);
 
   // ── Code export: Clean HTML ──
 
   const handleExportCleanHtml = useCallback(() => {
-    if (!generatedHtml) return;
-    const page = pages[currentPageIndex];
-    const cleanHtml = htmlToCleanHtml(generatedHtml, page?.name || 'ProtoAI');
-    const blob = new Blob([cleanHtml], { type: 'text/html' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${(page?.name || 'page').replace(/\s+/g, '_')}_clean.html`;
-    a.click();
-    URL.revokeObjectURL(url);
+    safeExport('导出 Clean HTML', () => {
+      if (!generatedHtml) return;
+      const page = pages[currentPageIndex];
+      const cleanHtml = htmlToCleanHtml(generatedHtml, page?.name || 'ProtoAI');
+      const blob = new Blob([cleanHtml], { type: 'text/html' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${(page?.name || 'page').replace(/\s+/g, '_')}_clean.html`;
+      a.click();
+      URL.revokeObjectURL(url);
+    });
   }, [generatedHtml, pages, currentPageIndex]);
 
   // ── Project export ──
 
   const handleExportProject = useCallback(() => {
-    try {
+    safeExport('导出项目', () => {
       const proj = currentProject;
       const exportData = {
         version: 1,
@@ -225,10 +252,7 @@ export default function useExport({
       a.download = `${(proj.name || 'project').replace(/[^a-zA-Z0-9\u4e00-\u9fff]/g, '_')}.protoai.json`;
       a.click();
       URL.revokeObjectURL(url);
-    } catch (err) {
-      console.error('Project export failed:', err);
-      alert('导出项目失败：' + (err.message || '未知错误'));
-    }
+    });
   }, [currentProject]);
 
   // ── Project import ──
@@ -246,21 +270,40 @@ export default function useExport({
     reader.onload = (evt) => {
       try {
         const data = JSON.parse(evt.target.result);
-        if (!data.project || data.type !== 'protoai_project') {
-          alert('文件格式不正确，请选择 .protoai.json 文件');
+
+        // Schema validation
+        const validationError = validateProjectSchema(data);
+        if (validationError) {
+          alert(validationError);
           return;
         }
+
         const proj = data.project;
-        const newId = generateId();
-        const imported = { ...proj, id: newId, name: (proj.name || '导入项目') + ' (导入)' };
-        setProjects(prev => ({ ...prev, [newId]: imported }));
-        setActiveProjectId(newId);
+        // Sanitize: ensure arrays exist, strip unexpected fields
+        const sanitized = {
+          id: generateId(),
+          name: (proj.name || '导入项目') + ' (导入)',
+          contentDesc: typeof proj.contentDesc === 'string' ? proj.contentDesc : '',
+          styleDesc: typeof proj.styleDesc === 'string' ? proj.styleDesc : '',
+          selectedStyles: Array.isArray(proj.selectedStyles) ? proj.selectedStyles : ['business'],
+          pages: Array.isArray(proj.pages) ? proj.pages.filter(Boolean) : [],
+          history: Array.isArray(proj.history) ? proj.history : [],
+          savedPlans: Array.isArray(proj.savedPlans) ? proj.savedPlans : [],
+          loadedPlanId: proj.loadedPlanId || null,
+          plannedPages: proj.plannedPages || null,
+          plannedStyleSpec: typeof proj.plannedStyleSpec === 'string' ? proj.plannedStyleSpec : '',
+          detectedPlatform: proj.detectedPlatform || 'pc',
+          timestamp: Date.now(),
+        };
+
+        setProjects(prev => ({ ...prev, [sanitized.id]: sanitized }));
+        setActiveProjectId(sanitized.id);
         setCurrentPageIndex(0);
-        setCode(imported.pages?.[0]?.html || '');
+        setCode(sanitized.pages[0]?.html || '');
         setMessages([]);
-        setPlannedPages(imported.plannedPages || null);
-        setPlannedStyleSpec(imported.plannedStyleSpec || '');
-        setDetectedPlatform(imported.detectedPlatform || 'pc');
+        setPlannedPages(sanitized.plannedPages);
+        setPlannedStyleSpec(sanitized.plannedStyleSpec);
+        setDetectedPlatform(sanitized.detectedPlatform);
         setIsGenerating(false);
         setIsRefining(false);
         setIsRegenerating(false);
@@ -272,10 +315,10 @@ export default function useExport({
         setGenerateError('');
         setGenerateProgress('');
 
-        if (imported.pages?.length > 0 && imported.pages.some(p => p?.html)) {
+        if (sanitized.pages.length > 0 && sanitized.pages.some(p => p?.html)) {
           setRightViewMode('prototype');
-        } else if (imported.plannedPages?.length > 0) {
-          const wfHtmls = generateAllWireframes(imported.plannedPages, imported.detectedPlatform || 'pc');
+        } else if (sanitized.plannedPages?.length > 0) {
+          const wfHtmls = generateAllWireframes(sanitized.plannedPages, sanitized.detectedPlatform || 'pc');
           setWireframeHtmls(wfHtmls);
           setRightViewMode('plan');
         } else {

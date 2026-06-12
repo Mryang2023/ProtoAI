@@ -125,15 +125,85 @@ export default function useProjects() {
     }
   }, [activeProjectId, updateCurrentProject]);
 
-  // Persist to localStorage
+  // Persist to localStorage — with automatic pruning on quota exceeded
   useEffect(() => {
+    const STORAGE_LIMIT = 4 * 1024 * 1024; // 4MB soft limit (below browser's 5MB)
+    const MAX_HISTORY_PER_PROJECT = 20;
+
     try {
       const json = JSON.stringify(projects);
-      if (json.length < 5 * 1024 * 1024) {
+
+      // Happy path: fits within limit
+      if (json.length < STORAGE_LIMIT) {
         localStorage.setItem(PROJECTS_KEY, json);
         localStorage.setItem(ACTIVE_PROJECT_KEY, activeProjectId);
+        return;
       }
-    } catch (e) { /* quota exceeded — ignore */ }
+
+      // ── Degradation: progressively trim data ──
+      let trimmed = JSON.parse(json); // deep clone
+
+      // Step 1: Cap history entries per project (oldest first)
+      for (const pid of Object.keys(trimmed)) {
+        const proj = trimmed[pid];
+        if (proj.history && proj.history.length > MAX_HISTORY_PER_PROJECT) {
+          proj.history = proj.history.slice(0, MAX_HISTORY_PER_PROJECT);
+        }
+      }
+      let retry = JSON.stringify(trimmed);
+      if (retry.length < STORAGE_LIMIT) {
+        localStorage.setItem(PROJECTS_KEY, retry);
+        localStorage.setItem(ACTIVE_PROJECT_KEY, activeProjectId);
+        // Sync trimmed data back to state
+        setProjects(trimmed);
+        console.warn('[ProtoAI] 存储超限，已自动裁剪旧历史记录');
+        return;
+      }
+
+      // Step 2: Remove HTML from older history entries (keep metadata only)
+      for (const pid of Object.keys(trimmed)) {
+        const proj = trimmed[pid];
+        if (proj.history) {
+          proj.history = proj.history.map((entry, i) => {
+            if (i >= 5) return { ...entry, pages: [] }; // keep only 5 most recent with data
+            return entry;
+          });
+        }
+      }
+      retry = JSON.stringify(trimmed);
+      if (retry.length < STORAGE_LIMIT) {
+        localStorage.setItem(PROJECTS_KEY, retry);
+        localStorage.setItem(ACTIVE_PROJECT_KEY, activeProjectId);
+        setProjects(trimmed);
+        console.warn('[ProtoAI] 存储超限，已清除旧历史中的页面数据');
+        return;
+      }
+
+      // Step 3: Limit saved plans per project
+      for (const pid of Object.keys(trimmed)) {
+        const proj = trimmed[pid];
+        if (proj.savedPlans && proj.savedPlans.length > 10) {
+          proj.savedPlans = proj.savedPlans.slice(0, 10);
+        }
+      }
+      retry = JSON.stringify(trimmed);
+      if (retry.length < STORAGE_LIMIT) {
+        localStorage.setItem(PROJECTS_KEY, retry);
+        localStorage.setItem(ACTIVE_PROJECT_KEY, activeProjectId);
+        setProjects(trimmed);
+        console.warn('[ProtoAI] 存储超限，已裁剪旧方案');
+        return;
+      }
+
+      // Final fallback: save what we can, warn user
+      localStorage.setItem(PROJECTS_KEY, retry);
+      localStorage.setItem(ACTIVE_PROJECT_KEY, activeProjectId);
+      console.warn('[ProtoAI] 存储空间不足，部分数据可能无法保存');
+    } catch (e) {
+      if (e.name === 'QuotaExceededError' || e.code === 22) {
+        console.error('[ProtoAI] localStorage 配额已满，数据无法保存');
+      }
+    }
   }, [projects, activeProjectId]);
 
   // Toggle a style tag on the current project

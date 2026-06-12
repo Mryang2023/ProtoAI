@@ -16,6 +16,8 @@ import {
   QrCode,
   Layout,
   Code2,
+  Undo2,
+  Redo2,
 } from 'lucide-react';
 
 export default function TopBar({
@@ -38,6 +40,10 @@ export default function TopBar({
   hasMultiplePages,
   theme,
   onToggleTheme,
+  canUndo,
+  canRedo,
+  onUndo,
+  onRedo,
 }) {
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [showProjectMenu, setShowProjectMenu] = useState(false);
@@ -135,6 +141,30 @@ export default function TopBar({
       </div>
 
       <div className="topbar-right">
+        {/* Undo / Redo buttons */}
+        {(canUndo || canRedo) && (
+          <div className="topbar-undo-redo">
+            <button
+              className="btn btn-icon"
+              onClick={onUndo}
+              disabled={!canUndo}
+              title="撤销 (Ctrl+Z)"
+              aria-label="撤销"
+            >
+              <Undo2 size={16} />
+            </button>
+            <button
+              className="btn btn-icon"
+              onClick={onRedo}
+              disabled={!canRedo}
+              title="重做 (Ctrl+Shift+Z)"
+              aria-label="重做"
+            >
+              <Redo2 size={16} />
+            </button>
+          </div>
+        )}
+
         <button
           className="btn btn-icon"
           onClick={onToggleTheme}

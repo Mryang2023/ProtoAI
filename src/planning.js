@@ -11,7 +11,7 @@ import { buildStyleSpec, buildContextPrompt } from './generation.js';
  * Accepts an optional `onStream(text)` callback for real-time progress.
  * Returns { pages, styleSpec, platform } or { pcPages, mobilePages, styleSpec, platform: 'both' }
  */
-export async function planProject(provider, config, contentDesc, fileContents, selectedStyles, styleDesc, onProgress, targetPlatform = 'auto', onStream) {
+export async function planProject(provider, config, contentDesc, fileContents, selectedStyles, styleDesc, onProgress, targetPlatform = 'auto', onStream, signal) {
   if (!config?.apiKey) throw new Error('请先在设置中配置 AI 模型的 API Key');
 
   if (targetPlatform === 'both') {
@@ -19,8 +19,8 @@ export async function planProject(provider, config, contentDesc, fileContents, s
     onProgress?.('正在同时规划 PC 端和移动端方案...');
 
     const [pcPlan, mobilePlan] = await Promise.all([
-      planProjectForPlatform(provider, config, contentDesc, fileContents, selectedStyles, styleDesc, (msg) => onProgress?.(`[PC端] ${msg}`), 'pc', onStream ? (text) => onStream(text, 'pc') : null),
-      planProjectForPlatform(provider, config, contentDesc, fileContents, selectedStyles, styleDesc, (msg) => onProgress?.(`[移动端] ${msg}`), 'mobile', onStream ? (text) => onStream(text, 'mobile') : null),
+      planProjectForPlatform(provider, config, contentDesc, fileContents, selectedStyles, styleDesc, (msg) => onProgress?.(`[PC端] ${msg}`), 'pc', onStream ? (text) => onStream(text, 'pc') : null, signal),
+      planProjectForPlatform(provider, config, contentDesc, fileContents, selectedStyles, styleDesc, (msg) => onProgress?.(`[移动端] ${msg}`), 'mobile', onStream ? (text) => onStream(text, 'mobile') : null, signal),
     ]);
 
     return {
@@ -33,10 +33,10 @@ export async function planProject(provider, config, contentDesc, fileContents, s
   }
 
   onProgress?.('正在分析需求，规划页面结构...');
-  return planProjectForPlatform(provider, config, contentDesc, fileContents, selectedStyles, styleDesc, onProgress, targetPlatform === 'auto' ? null : targetPlatform, onStream ? (text) => onStream(text, targetPlatform) : null);
+  return planProjectForPlatform(provider, config, contentDesc, fileContents, selectedStyles, styleDesc, onProgress, targetPlatform === 'auto' ? null : targetPlatform, onStream ? (text) => onStream(text, targetPlatform) : null, signal);
 }
 
-async function planProjectForPlatform(provider, config, contentDesc, fileContents, selectedStyles, styleDesc, onProgress, platform, onStream) {
+async function planProjectForPlatform(provider, config, contentDesc, fileContents, selectedStyles, styleDesc, onProgress, platform, onStream, signal) {
   const styleSpec = buildStyleSpec(selectedStyles, styleDesc);
 
   let platformInstruction = '';
@@ -94,9 +94,9 @@ ${!platform ? `platform 判断规则：
   if (onStream) {
     rawResponse = await callAIStream(provider, config, systemPrompt, userPrompt, (text) => {
       onStream(text);
-    });
+    }, signal);
   } else {
-    rawResponse = await callAI(provider, config, systemPrompt, userPrompt);
+    rawResponse = await callAI(provider, config, systemPrompt, userPrompt, signal);
   }
 
   let parsed;

@@ -3,7 +3,7 @@ import {
   Monitor, Tablet, Smartphone, RefreshCw, ZoomIn, ZoomOut,
   Download, FileDown, Archive, Image, Images,
   Sparkles, AlertCircle, ChevronDown, CheckCircle2, ArrowLeft, RotateCcw,
-  Layers, Eye, Brain, FileText, Route, Loader2,
+  Layers, Eye, Brain, FileText, Route, Loader2, XCircle,
 } from 'lucide-react';
 
 export default function RightPanel({
@@ -19,6 +19,7 @@ export default function RightPanel({
   planningStreamText = '',
   planningDiscoveredPages = [],
   planningPhase = '',
+  onCancelGeneration,
 }) {
   const [device, setDevice] = useState('desktop');
   const [zoom, setZoom] = useState(100);
@@ -167,6 +168,11 @@ export default function RightPanel({
                   <ArrowLeft size={12} />返回进度
                 </button>
               )}
+              {onCancelGeneration && (
+                <button className="compact-progress-cancel" onClick={onCancelGeneration} title="取消生成">
+                  <XCircle size={13} />取消
+                </button>
+              )}
             </div>
           )}
 
@@ -186,6 +192,11 @@ export default function RightPanel({
                   <span style={{ marginLeft: 6, opacity: 0.6 }}>{planningDiscoveredPages.map(p => p.name).join(' · ')}</span>
                 )}
               </span>
+              {onCancelGeneration && (
+                <button className="compact-progress-cancel" onClick={onCancelGeneration} title="取消规划">
+                  <XCircle size={13} />取消
+                </button>
+              )}
             </div>
           )}
 

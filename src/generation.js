@@ -291,10 +291,10 @@ function buildPageUserPrompt(page, allPages, fileContents, contentDesc, styleSpe
   return userPrompt;
 }
 
-export async function generateSinglePage(provider, config, page, styleSpec, contentDesc, fileContents, selectedStyles, styleDesc, allPages, platform = 'pc') {
+export async function generateSinglePage(provider, config, page, styleSpec, contentDesc, fileContents, selectedStyles, styleDesc, allPages, platform = 'pc', signal) {
   const systemPrompt = buildPageSystemPrompt(platform);
   const userPrompt = buildPageUserPrompt(page, allPages, fileContents, contentDesc, styleSpec, platform);
-  const rawResponse = await callAI(provider, config, systemPrompt, userPrompt);
+  const rawResponse = await callAI(provider, config, systemPrompt, userPrompt, signal);
   return { html: extractHtml(rawResponse.content), finishReason: rawResponse.finishReason };
 }
 
@@ -302,21 +302,21 @@ export async function generateSinglePage(provider, config, page, styleSpec, cont
  * Streaming version of generateSinglePage.
  * Calls `onChunk(htmlString)` with progressively accumulated (and repaired) HTML.
  */
-export async function generateSinglePageStream(provider, config, page, styleSpec, contentDesc, fileContents, selectedStyles, styleDesc, allPages, platform = 'pc', onChunk) {
+export async function generateSinglePageStream(provider, config, page, styleSpec, contentDesc, fileContents, selectedStyles, styleDesc, allPages, platform = 'pc', onChunk, signal) {
   const systemPrompt = buildPageSystemPrompt(platform);
   const userPrompt = buildPageUserPrompt(page, allPages, fileContents, contentDesc, styleSpec, platform);
 
   const rawResponse = await callAIStream(provider, config, systemPrompt, userPrompt, (fullText) => {
     const html = extractHtml(fullText);
     onChunk?.(html);
-  });
+  }, signal);
 
   return { html: extractHtml(rawResponse.content), finishReason: rawResponse.finishReason };
 }
 
 // ── Batch Generation ────────────────────────────────────
 
-export async function generateProjectPages(provider, config, plannedPages, styleSpec, contentDesc, fileContents, selectedStyles, styleDesc, platform, onProgress, onPageGenerated, onStream) {
+export async function generateProjectPages(provider, config, plannedPages, styleSpec, contentDesc, fileContents, selectedStyles, styleDesc, platform, onProgress, onPageGenerated, onStream, signal) {
   if (!config?.apiKey) throw new Error('请先在设置中配置 AI 模型的 API Key');
 
   const MAX_CONCURRENT = 3;
@@ -331,19 +331,20 @@ export async function generateProjectPages(provider, config, plannedPages, style
   async function generateWithRetry(page, index, shouldStream) {
     let lastError = null;
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+      if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
       try {
         // Use streaming for the designated page (first page by default)
         if (shouldStream && onStream && attempt === 0) {
           const result = await generateSinglePageStream(
             provider, config, page, styleSpec, contentDesc,
             fileContents, selectedStyles, styleDesc, plannedPages, platform,
-            (html) => onStream(html, index)
+            (html) => onStream(html, index), signal
           );
           return result.html;
         }
         const result = await generateSinglePage(
           provider, config, page, styleSpec, contentDesc,
-          fileContents, selectedStyles, styleDesc, plannedPages, platform
+          fileContents, selectedStyles, styleDesc, plannedPages, platform, signal
         );
         if (result.finishReason === 'length' && attempt < MAX_RETRIES) {
           console.warn(`Page "${page.name}" truncated (attempt ${attempt + 1}), retrying...`);
@@ -351,6 +352,7 @@ export async function generateProjectPages(provider, config, plannedPages, style
         }
         return result.html;
       } catch (err) {
+        if (err.name === 'AbortError' || signal?.aborted) throw new DOMException('Aborted', 'AbortError');
         lastError = err;
         if (attempt < MAX_RETRIES) {
           await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
@@ -364,8 +366,10 @@ export async function generateProjectPages(provider, config, plannedPages, style
   const streamPageIndex = 0;
 
   const promises = plannedPages.map(async (page, i) => {
+    if (signal?.aborted) return;
     if (i > 0 && i % MAX_CONCURRENT === 0) {
       await new Promise((r) => setTimeout(r, STAGGER_DELAY_MS));
+      if (signal?.aborted) return;
     }
     try {
       const html = await generateWithRetry(page, i, i === streamPageIndex);
@@ -375,6 +379,11 @@ export async function generateProjectPages(provider, config, plannedPages, style
       onProgress?.(`已完成 ${completed.size}/${plannedPages.length} 页`);
       onPageGenerated?.(result, i, plannedPages.length);
     } catch (err) {
+      if (err.name === 'AbortError') {
+        results[i] = { ...page, html: '', error: '已取消' };
+        completed.add(i);
+        return;
+      }
       const result = { ...page, html: '', error: err.message };
       results[i] = result;
       completed.add(i);

@@ -230,9 +230,69 @@ export default function App() {
   // Flag: user manually selected a page to preview during generation (ref to avoid stale closures)
   const userSelectedPageRef = useRef(false);
   const isGeneratingRef = useRef(false);
+  // AbortController for cancelling ongoing generation/planning API calls
+  const abortControllerRef = useRef(null);
 
   // Current page html (derived)
   const generatedHtml = pages[currentPageIndex]?.html || '';
+
+  // Undo/Redo helpers — snapshot current page before destructive operations
+  const pushUndo = useCallback((pageIndex) => {
+    const idx = typeof pageIndex === 'number' ? pageIndex : currentPageIndex;
+    const page = pages[idx];
+    if (!page?.html) return;
+    undoStackRef.current.push({ pageIndex: idx, html: page.html, code });
+    if (undoStackRef.current.length > 50) undoStackRef.current.shift(); // cap at 50
+    redoStackRef.current = []; // clear redo on new action
+    setCanUndo(true);
+    setCanRedo(false);
+  }, [pages, currentPageIndex, code]);
+
+  const handleUndo = useCallback(() => {
+    const snapshot = undoStackRef.current.pop();
+    if (!snapshot) return;
+    // Push current state to redo stack
+    const currentPage = pages[snapshot.pageIndex];
+    if (currentPage?.html) {
+      redoStackRef.current.push({ pageIndex: snapshot.pageIndex, html: currentPage.html, code });
+    }
+    // Restore snapshot
+    setPages((prev) => {
+      const next = [...prev];
+      if (next[snapshot.pageIndex]) {
+        next[snapshot.pageIndex] = { ...next[snapshot.pageIndex], html: snapshot.html };
+      }
+      return next;
+    });
+    if (snapshot.pageIndex === currentPageIndex) {
+      setCode(snapshot.code || snapshot.html);
+    }
+    setCanUndo(undoStackRef.current.length > 0);
+    setCanRedo(redoStackRef.current.length > 0);
+  }, [pages, currentPageIndex]);
+
+  const handleRedo = useCallback(() => {
+    const snapshot = redoStackRef.current.pop();
+    if (!snapshot) return;
+    // Push current state to undo stack
+    const currentPage = pages[snapshot.pageIndex];
+    if (currentPage?.html) {
+      undoStackRef.current.push({ pageIndex: snapshot.pageIndex, html: currentPage.html, code });
+    }
+    // Restore redo snapshot
+    setPages((prev) => {
+      const next = [...prev];
+      if (next[snapshot.pageIndex]) {
+        next[snapshot.pageIndex] = { ...next[snapshot.pageIndex], html: snapshot.html };
+      }
+      return next;
+    });
+    if (snapshot.pageIndex === currentPageIndex) {
+      setCode(snapshot.code || snapshot.html);
+    }
+    setCanUndo(undoStackRef.current.length > 0);
+    setCanRedo(redoStackRef.current.length > 0);
+  }, [pages, currentPageIndex]);
 
   // Refine state — restore code from saved pages
   const [code, setCode] = useState(currentProject.pages?.[0]?.html || '');
@@ -240,6 +300,12 @@ export default function App() {
   const [isRefining, setIsRefining] = useState(false);
   const [isRegenerating, setIsRegenerating] = useState(false);
   const [regeneratingPageIndex, setRegeneratingPageIndex] = useState(null);
+
+  // Undo/Redo stack — snapshots of page HTML before each destructive operation
+  const undoStackRef = useRef([]); // [{ pageIndex, html, code }]
+  const redoStackRef = useRef([]);
+  const [canUndo, setCanUndo] = useState(false);
+  const [canRedo, setCanRedo] = useState(false);
 
   // AI settings — pre-configured with default model
   const [showSettings, setShowSettings] = useState(false);
@@ -372,6 +438,9 @@ export default function App() {
 
   const handlePlan = useCallback(async () => {
     setIsGenerating(true);
+    isGeneratingRef.current = true;
+    abortControllerRef.current = new AbortController();
+    const signal = abortControllerRef.current.signal;
     setGenerateError('');
     setGenerateProgress('正在读取文件内容...');
     setPlannedPages(null);
@@ -414,7 +483,8 @@ export default function App() {
           if (partial.pages.length > 0) {
             setPlanningDiscoveredPages(partial.pages);
           }
-        }
+        },
+        signal
       );
 
       setPlanningPhase('complete');
@@ -463,8 +533,15 @@ export default function App() {
       const updatedPlans = [planEntry, ...currentPlans.filter((p) => p.id !== loadedPlanId)];
       updateCurrentProject({ savedPlans: updatedPlans, loadedPlanId: planEntry.id });
     } catch (err) {
+      if (err.name === 'AbortError') {
+        setGenerateProgress('');
+        setPlanningStreamText('');
+        setPlanningPhase('');
+        return; // User cancelled — don't show error
+      }
       setGenerateError(err.message || '规划失败');
       setIsGenerating(false);
+      isGeneratingRef.current = false;
       setGenerateProgress('');
       setPlanningStreamText('');
       setPlanningPhase('');
@@ -508,6 +585,8 @@ export default function App() {
 
     setIsGenerating(true);
     isGeneratingRef.current = true;
+    abortControllerRef.current = new AbortController();
+    const signal = abortControllerRef.current.signal;
     setGenerateError('');
     userSelectedPageRef.current = false;
     setStreamingHtml('');
@@ -547,7 +626,8 @@ export default function App() {
               return next;
             });
           },
-          (html) => setStreamingHtml(html)
+          (html) => setStreamingHtml(html),
+          signal
         );
         setPcGeneratedPages(pcResult.pages);
 
@@ -569,7 +649,8 @@ export default function App() {
               return next;
             });
           },
-          (html) => setStreamingHtml(html)
+          (html) => setStreamingHtml(html),
+          signal
         );
         setMobileGeneratedPages(mobileResult.pages);
 
@@ -628,7 +709,8 @@ export default function App() {
               return next;
             });
           },
-          (html) => setStreamingHtml(html)
+          (html) => setStreamingHtml(html),
+          signal
         );
 
         setPages(result.pages);
@@ -654,6 +736,7 @@ export default function App() {
         setCurrentHistoryId(entry.id);
       }
     } catch (err) {
+      if (err.name === 'AbortError') return; // User cancelled
       setGenerateError(err.message || '生成失败，请检查 AI 模型配置');
     } finally {
       setIsGenerating(false);
@@ -682,6 +765,17 @@ export default function App() {
     setActivePlanPlatform('pc');
     updateCurrentProject({ loadedPlanId: null });
   }, [updateCurrentProject]);
+
+  // Cancel ongoing generation (planning or page generation)
+  const handleCancelGeneration = useCallback(() => {
+    abortControllerRef.current?.abort();
+    setIsGenerating(false);
+    isGeneratingRef.current = false;
+    setGenerateProgress('已取消');
+    setPlanningStreamText('');
+    setPlanningPhase('');
+    setStreamingHtml('');
+  }, []);
 
   // View mode switching: plan ↔ prototype
   const handleViewPlan = useCallback(() => {
@@ -820,6 +914,7 @@ export default function App() {
 
   const handleSendMessage = useCallback(async (text) => {
     if (isRefining || !generatedHtml) return;
+    pushUndo(); // Snapshot before refine
     setMessages((prev) => [...prev, { role: 'user', content: text }]);
     setIsRefining(true);
 
@@ -855,6 +950,7 @@ export default function App() {
     const targetIndex = typeof pageIndex === 'number' ? pageIndex : currentPageIndex;
     if (isRegenerating || !pages[targetIndex]) return;
     const page = pages[targetIndex];
+    pushUndo(targetIndex); // Snapshot before regenerate
     setIsRegenerating(true);
     setRegeneratingPageIndex(targetIndex);
     setGenerateProgress(`正在重新生成「${page.name}」...`);
@@ -1144,6 +1240,7 @@ export default function App() {
 
   const handleRefineRegion = useCallback(async (regionHtml, instruction) => {
     if (isRefining || !generatedHtml) return;
+    pushUndo(); // Snapshot before region edit
     setMessages((prev) => [...prev, { role: 'user', content: `[局部修改] ${instruction}` }]);
     setIsRefining(true);
 
@@ -1193,6 +1290,26 @@ export default function App() {
     });
   }, [generatedHtml, currentPageIndex]);
 
+  // Global keyboard shortcuts for Undo/Redo
+  useEffect(() => {
+    const handler = (e) => {
+      const isCtrlOrCmd = e.ctrlKey || e.metaKey;
+      if (!isCtrlOrCmd) return;
+      // Skip if user is typing in an input/textarea
+      const tag = e.target.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || e.target.isContentEditable) return;
+
+      if (e.key === 'z' && !e.shiftKey && canUndo) {
+        e.preventDefault();
+        handleUndo();
+      } else if ((e.key === 'z' && e.shiftKey) || e.key === 'y') {
+        if (canRedo) { e.preventDefault(); handleRedo(); }
+      }
+    };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [canUndo, canRedo, handleUndo, handleRedo]);
+
   return (
     <div className="app-layout" data-component="App Layout" data-od-id="app-layout">
       <TopBar
@@ -1215,6 +1332,10 @@ export default function App() {
         hasMultiplePages={pages.filter((p) => p?.html).length > 1}
         theme={theme}
         onToggleTheme={toggleTheme}
+        canUndo={canUndo}
+        canRedo={canRedo}
+        onUndo={handleUndo}
+        onRedo={handleRedo}
       />
 
       <ErrorBoundary>
@@ -1264,6 +1385,7 @@ export default function App() {
           planningStreamText={planningStreamText}
           planningDiscoveredPages={planningDiscoveredPages}
           planningPhase={planningPhase}
+          onCancelGeneration={handleCancelGeneration}
           onRefresh={handleRefresh}
           onExport={handleExport}
           onExportAll={handleExportAll}

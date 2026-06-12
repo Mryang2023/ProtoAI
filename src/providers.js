@@ -5,17 +5,17 @@
 
 // ── Router ──────────────────────────────────────────────
 
-export async function callAI(provider, config, systemPrompt, userPrompt) {
+export async function callAI(provider, config, systemPrompt, userPrompt, signal) {
   if (!config?.apiKey) throw new Error('请先在设置中配置 AI 模型的 API Key');
   if (provider === 'claude') {
-    return callClaude(config.apiKey, config.endpoint, config.model, systemPrompt, userPrompt);
+    return callClaude(config.apiKey, config.endpoint, config.model, systemPrompt, userPrompt, signal);
   }
-  return callOpenAICompatible(config.apiKey, config.endpoint, config.model, systemPrompt, userPrompt);
+  return callOpenAICompatible(config.apiKey, config.endpoint, config.model, systemPrompt, userPrompt, signal);
 }
 
 // ── OpenAI-compatible ───────────────────────────────────
 
-export async function callOpenAICompatible(apiKey, endpoint, model, systemPrompt, userPrompt) {
+export async function callOpenAICompatible(apiKey, endpoint, model, systemPrompt, userPrompt, signal) {
   const baseUrl = endpoint || 'https://api.openai.com/v1';
   const url = `${baseUrl.replace(/\/$/, '')}/chat/completions`;
   const response = await fetch(url, {
@@ -30,6 +30,7 @@ export async function callOpenAICompatible(apiKey, endpoint, model, systemPrompt
       temperature: 0.7,
       max_tokens: 16000,
     }),
+    signal: signal || AbortSignal.timeout(120_000),
   });
   if (!response.ok) {
     const errorText = await response.text();
@@ -46,7 +47,7 @@ export async function callOpenAICompatible(apiKey, endpoint, model, systemPrompt
 
 // ── Claude (Anthropic) ──────────────────────────────────
 
-export async function callClaude(apiKey, endpoint, model, systemPrompt, userPrompt) {
+export async function callClaude(apiKey, endpoint, model, systemPrompt, userPrompt, signal) {
   const baseUrl = endpoint || 'https://api.anthropic.com/v1';
   const url = `${baseUrl.replace(/\/$/, '')}/messages`;
   const response = await fetch(url, {
@@ -63,6 +64,7 @@ export async function callClaude(apiKey, endpoint, model, systemPrompt, userProm
       system: systemPrompt,
       messages: [{ role: 'user', content: userPrompt }],
     }),
+    signal: signal || AbortSignal.timeout(120_000),
   });
   if (!response.ok) {
     const errorText = await response.text();
@@ -83,7 +85,7 @@ export async function callClaude(apiKey, endpoint, model, systemPrompt, userProm
  * Calls `onChunk(accumulatedText)` on each SSE delta.
  * Returns the final full text.
  */
-export async function streamOpenAICompatible(apiKey, endpoint, model, systemPrompt, userPrompt, onChunk) {
+export async function streamOpenAICompatible(apiKey, endpoint, model, systemPrompt, userPrompt, onChunk, signal) {
   const baseUrl = endpoint || 'https://api.openai.com/v1';
   const url = `${baseUrl.replace(/\/$/, '')}/chat/completions`;
   const response = await fetch(url, {
@@ -99,6 +101,7 @@ export async function streamOpenAICompatible(apiKey, endpoint, model, systemProm
       max_tokens: 16000,
       stream: true,
     }),
+    signal: signal || AbortSignal.timeout(180_000),
   });
 
   if (!response.ok) {
@@ -150,7 +153,7 @@ export async function streamOpenAICompatible(apiKey, endpoint, model, systemProm
  * Stream a Claude (Anthropic) message.
  * Calls `onChunk(accumulatedText)` on each content_block_delta event.
  */
-export async function streamClaude(apiKey, endpoint, model, systemPrompt, userPrompt, onChunk) {
+export async function streamClaude(apiKey, endpoint, model, systemPrompt, userPrompt, onChunk, signal) {
   const baseUrl = endpoint || 'https://api.anthropic.com/v1';
   const url = `${baseUrl.replace(/\/$/, '')}/messages`;
   const response = await fetch(url, {
@@ -168,6 +171,7 @@ export async function streamClaude(apiKey, endpoint, model, systemPrompt, userPr
       messages: [{ role: 'user', content: userPrompt }],
       stream: true,
     }),
+    signal: signal || AbortSignal.timeout(180_000),
   });
 
   if (!response.ok) {
@@ -216,11 +220,12 @@ export async function streamClaude(apiKey, endpoint, model, systemPrompt, userPr
 /**
  * Stream AI response. Calls `onChunk(fullText)` as text accumulates.
  * Returns { content, finishReason } when complete.
+ * Optional `signal` parameter enables cancellation via AbortController.
  */
-export async function callAIStream(provider, config, systemPrompt, userPrompt, onChunk) {
+export async function callAIStream(provider, config, systemPrompt, userPrompt, onChunk, signal) {
   if (!config?.apiKey) throw new Error('请先在设置中配置 AI 模型的 API Key');
   if (provider === 'claude') {
-    return streamClaude(config.apiKey, config.endpoint, config.model, systemPrompt, userPrompt, onChunk);
+    return streamClaude(config.apiKey, config.endpoint, config.model, systemPrompt, userPrompt, onChunk, signal);
   }
-  return streamOpenAICompatible(config.apiKey, config.endpoint, config.model, systemPrompt, userPrompt, onChunk);
+  return streamOpenAICompatible(config.apiKey, config.endpoint, config.model, systemPrompt, userPrompt, onChunk, signal);
 }

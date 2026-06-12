@@ -353,7 +353,7 @@ function PlanningAnalysisView({ phase, discoveredPages, streamText }) {
   const currentIdx = phaseOrder.indexOf(phase);
 
   // Extract readable insights from stream text
-  const readableLines = extractReadableInsights(streamText);
+  const readableLines = extractReadableInsights(streamText, discoveredPages);
 
   return (
     <div className="planning-view" data-component="Planning Analysis View">
@@ -448,9 +448,10 @@ function PlanningAnalysisView({ phase, discoveredPages, streamText }) {
 
 /**
  * Extract readable insights from raw JSON streaming text.
- * Filters noise and shows meaningful content like page names, descriptions.
+ * Only extracts platform info; page names come from the correctly parsed
+ * `discoveredPages` prop (parsePartialPlan already handles nesting).
  */
-function extractReadableInsights(text) {
+function extractReadableInsights(text, discoveredPages) {
   if (!text || text.length < 10) return [];
   const lines = [];
   const seen = new Set();
@@ -462,29 +463,17 @@ function extractReadableInsights(text) {
     lines.push(platformMatch[1] === 'mobile' ? '📱 目标平台：移动端' : '🖥️ 目标平台：PC端');
   }
 
-  // Extract page names with descriptions
-  const pagePattern = /"name"\s*:\s*"([^"]+)"/g;
-  let match;
-  while ((match = pagePattern.exec(text)) !== null) {
-    const name = match[1];
-    if (seen.has(`page-${name}`)) continue;
-    seen.add(`page-${name}`);
+  // Use correctly parsed page data from props (not raw regex)
+  if (discoveredPages && discoveredPages.length > 0) {
+    for (const page of discoveredPages) {
+      if (seen.has(`page-${page.name}`)) continue;
+      seen.add(`page-${page.name}`);
 
-    const after = text.slice(match.index, match.index + 400);
-    const descMatch = after.match(/"description"\s*:\s*"([^"]+)"/);
-    const routeMatch = after.match(/"route"\s*:\s*"([^"]+)"/);
-
-    let line = `📄 ${name}`;
-    if (descMatch) line += ` — ${descMatch[1]}`;
-    if (routeMatch) line += `  (${routeMatch[1]})`;
-    lines.push(line);
-  }
-
-  // Extract section names
-  const sectionPattern = /"sections"\s*:\s*\[/g;
-  if (text.match(sectionPattern)) {
-    const sectionNamePattern = /"name"\s*:\s*"([^"]+)"/g;
-    // Only look within sections context (skip page-level names)
+      let line = `📄 ${page.name}`;
+      if (page.description) line += ` — ${page.description}`;
+      if (page.route) line += `  (${page.route})`;
+      lines.push(line);
+    }
   }
 
   return lines.slice(0, 20); // Limit to avoid overwhelming

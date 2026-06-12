@@ -134,6 +134,7 @@ ${!platform ? `platform 判断规则：
 /**
  * Parse partial JSON streaming text to extract discovered page names.
  * Tolerant of incomplete JSON — extracts whatever is available.
+ * Correctly distinguishes page-level "name" from section-level "name".
  */
 export function parsePartialPlan(text) {
   if (!text) return { platform: null, pages: [], phase: 'thinking' };
@@ -141,37 +142,89 @@ export function parsePartialPlan(text) {
   const pages = [];
   let phase = 'thinking';
 
-  // Try to extract page names from partial JSON
-  // Pattern: "name": "页面名称"
-  const nameRegex = /"name"\s*:\s*"([^"]+)"/g;
-  let match;
-  const seenNames = new Set();
-
   // First check if we have "platform"
   const platformMatch = text.match(/"platform"\s*:\s*"(mobile|pc)"/);
   const platform = platformMatch ? platformMatch[1] : null;
 
-  // Find all "pages" array entries
-  const pagesStart = text.indexOf('"pages"');
-  if (pagesStart !== -1) {
-    phase = 'planning';
-    const afterPages = text.slice(pagesStart);
+  // Find the "pages" array start
+  const pagesKeyMatch = text.match(/"pages"\s*:\s*\[/);
+  if (!pagesKeyMatch) return { platform, pages, phase };
 
-    // Extract each page name
-    while ((match = nameRegex.exec(afterPages)) !== null) {
-      const name = match[1];
-      if (!seenNames.has(name)) {
-        seenNames.add(name);
+  phase = 'planning';
+  const pagesArrayStart = pagesKeyMatch.index + pagesKeyMatch[0].length;
+  const afterPages = text.slice(pagesArrayStart);
 
-        // Try to get description near this name
-        const namePos = match.index;
-        const contextAfter = afterPages.slice(namePos, namePos + 500);
+  // Walk through the text tracking brace/bracket depth to find page-level objects.
+  // depth 0 = inside pages array, directly
+  // When we encounter '{' at depth 0, it's a new page object.
+  // When we encounter '"sections"' inside a page object, we skip nested names.
+  let depth = 0; // 0 = pages array level
+  let inPageObj = false;
+  let inSections = false;
+  let sectionsDepth = 0;
+  let i = 0;
+
+  while (i < afterPages.length) {
+    const ch = afterPages[i];
+
+    // Track string boundaries to skip strings
+    if (ch === '"') {
+      // Skip the entire string
+      i++;
+      while (i < afterPages.length) {
+        if (afterPages[i] === '\\') { i += 2; continue; }
+        if (afterPages[i] === '"') break;
+        i++;
+      }
+      i++;
+      continue;
+    }
+
+    if (ch === '[') {
+      depth++;
+      if (inSections) sectionsDepth++;
+    } else if (ch === ']') {
+      if (depth === 0) break; // pages array ended
+      depth--;
+      if (inSections) {
+        sectionsDepth--;
+        if (sectionsDepth < 0) { inSections = false; sectionsDepth = 0; }
+      }
+    } else if (ch === '{') {
+      if (depth === 0 && !inSections) {
+        // This is a page-level object
+        inPageObj = true;
+      }
+      if (inSections) sectionsDepth++;
+    } else if (ch === '}') {
+      if (depth === 0 && inPageObj) {
+        // Page object ended
+        inPageObj = false;
+      }
+      if (inSections) sectionsDepth--;
+    }
+
+    // Check for "sections" keyword to enter sections-skipping mode
+    if (inPageObj && !inSections && depth === 0) {
+      const remaining = afterPages.slice(i);
+      const sectionsMatch = remaining.match(/^"sections"\s*:\s*\[/);
+      if (sectionsMatch) {
+        inSections = true;
+        sectionsDepth = 0;
+        i += sectionsMatch[0].length;
+        continue;
+      }
+    }
+
+    // Extract "name" only when inside a page object and NOT inside sections
+    if (inPageObj && !inSections && depth === 0) {
+      const remaining = afterPages.slice(i);
+      const nameMatch = remaining.match(/^"name"\s*:\s*"([^"]+)"/);
+      if (nameMatch) {
+        const name = nameMatch[1];
+        const contextAfter = remaining.slice(0, 600);
         const descMatch = contextAfter.match(/"description"\s*:\s*"([^"]+)"/);
         const routeMatch = contextAfter.match(/"route"\s*:\s*"([^"]+)"/);
-
-        // Count sections for this page
-        const sectionContext = contextAfter.slice(0, contextAfter.indexOf('},') > 0 ? contextAfter.indexOf('},') : contextAfter.length);
-        const sectionCount = (sectionContext.match(/"sections"/g) || []).length;
 
         pages.push({
           name,
@@ -180,6 +233,8 @@ export function parsePartialPlan(text) {
         });
       }
     }
+
+    i++;
   }
 
   if (pages.length > 0) phase = 'detailing';

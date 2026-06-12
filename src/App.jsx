@@ -383,6 +383,15 @@ export default function App() {
     setPlanningDiscoveredPages([]);
     setPlanningPhase('thinking');
 
+    // Clean up previous generation state so the canvas is fresh
+    setPages([]);
+    setStreamingHtml('');
+    setStreamingPageIndex(null);
+    setCurrentPageIndex(0);
+    setWireframeHtmls([]);
+    setProgressCurrent(0);
+    setProgressTotal(0);
+
     try {
       const fileContents = uploadedFiles.length > 0 ? await readFileContents(uploadedFiles) : [];
       setGenerateProgress('正在分析需求，AI 正在规划页面结构...');

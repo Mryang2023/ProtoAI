@@ -211,9 +211,11 @@ export function htmlToTailwind(html) {
  * Generate a clean, production-ready HTML file with proper meta tags.
  */
 export function htmlToCleanHtml(html, title = 'ProtoAI Prototype') {
-  // Remove ProtoAI navigation bar if present
-  let clean = html.replace(/<nav[^>]*style="position:fixed;top:0[^"]*"[^>]*>[\s\S]*?<\/nav>/g, '');
+  // Remove ProtoAI navigation bar if present (match by data attribute or inline style pattern)
+  let clean = html.replace(/<nav[^>]*data-protoai-nav[^>]*>[\s\S]*?<\/nav>/g, '');
+  clean = clean.replace(/<nav[^>]*style="position:fixed;top:0[^"]*"[^>]*>[\s\S]*?<\/nav>/g, '');
   clean = clean.replace(/<div[^>]*style="height:52px;"[^>]*><\/div>/g, '');
+  clean = clean.replace(/<div[^>]*style="height:44px;"[^>]*><\/div>/g, '');
 
   // Ensure proper title
   if (clean.includes('<title>')) {

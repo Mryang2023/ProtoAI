@@ -11,7 +11,7 @@ import PlansHistoryModal from './components/PlansHistoryModal.jsx';
 import QrPreviewModal from './components/QrPreviewModal.jsx';
 import TemplateLibrary from './components/TemplateLibrary.jsx';
 import { generateAllWireframes } from './components/PlanPreview.jsx';
-import { planProject, generateProjectPages, generateSinglePage, readFileContents, capturePageAsImage, refinePage, refineRegion, regenerateSinglePage, buildStyleSpec, pageFileName, parsePartialPlan } from './aiService.js';
+import { planProject, generateProjectPages, generateSinglePage, readFileContents, capturePageAsImage, refinePage, refineRegion, regenerateSinglePage, buildStyleSpec, pageFileName, parsePartialPlan, injectNavigation } from './aiService.js';
 import { htmlToReactComponent, htmlToTailwind, htmlToCleanHtml } from './codeExport.js';
 
 const BUILTIN_PROVIDER_NAMES = { openai: 'OpenAI', claude: 'Claude', custom: 'Mimo' };
@@ -956,9 +956,12 @@ export default function App() {
       if (validPages.length === 0) return;
       if (validPages.length === 1) { handleExport(); return; }
 
+      // Inject navigation into pages for cross-linking in the exported ZIP
+      const pagesWithNav = injectNavigation(validPages);
+
       const zip = new JSZip();
       // Use the full pages array for indexing so filenames match injectNavigation()
-      pages.forEach((page, i) => {
+      pagesWithNav.forEach((page, i) => {
         if (!page?.html) return;
         zip.file(pageFileName(page, i), page.html);
       });
@@ -1056,9 +1059,10 @@ export default function App() {
         return;
       }
 
-      // ZIP export for history
+      // ZIP export for history — inject navigation for cross-linking
       const zip = new JSZip();
-      entry.pages.forEach((page, i) => {
+      const pagesWithNav = injectNavigation(validPages);
+      pagesWithNav.forEach((page, i) => {
         if (!page?.html) return;
         zip.file(pageFileName(page, i), page.html);
       });

@@ -169,19 +169,23 @@ export function injectNavigation(pages) {
       const fn = pageFileName(page, i);
       const isCurrent = i === currentPageIndex;
       if (isCurrent) {
-        return `<a href="${fn}" style="text-decoration:none;color:#2563eb;padding:6px 14px;border-radius:6px;font-size:14px;font-weight:600;background:rgba(37,99,235,0.08);">${page.name}</a>`;
+        return `<a href="${fn}" style="text-decoration:none;color:#fff;padding:5px 12px;border-radius:5px;font-size:13px;font-weight:600;background:#2563eb;">${page.name}</a>`;
       }
-      return `<a href="${fn}" style="text-decoration:none;color:#555;padding:6px 14px;border-radius:6px;font-size:14px;font-weight:500;transition:all .15s;" onmouseover="this.style.background='#f0f0f0';this.style.color='#111'" onmouseout="this.style.background='transparent';this.style.color='#555'">${page.name}</a>`;
-    }).join('\n        ');
+      return `<a href="${fn}" style="text-decoration:none;color:#555;padding:5px 12px;border-radius:5px;font-size:13px;font-weight:500;transition:all .15s;" onmouseover="this.style.background='#f0f0f0';this.style.color='#111'" onmouseout="this.style.background='transparent';this.style.color='#555'">${page.name}</a>`;
+    }).join('');
+
+    // Show page count and current indicator
+    const pageInfo = `<span style="font-size:12px;color:#aaa;margin-left:auto;white-space:nowrap;">${currentPageIndex + 1} / ${pages.length}</span>`;
 
     const navHtml = `
-  <nav style="position:fixed;top:0;left:0;right:0;z-index:99999;display:flex;align-items:center;gap:4px;padding:10px 24px;background:#ffffff;border-bottom:1px solid #e5e7eb;box-shadow:0 2px 8px rgba(0,0,0,0.08);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
-    <span style="font-weight:700;font-size:15px;margin-right:16px;color:#111;white-space:nowrap;">ProtoAI</span>
-    <div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap;">
+  <nav data-protoai-nav style="position:fixed;top:0;left:0;right:0;z-index:99999;display:flex;align-items:center;gap:6px;padding:8px 20px;background:#fff;border-bottom:1px solid #eee;box-shadow:0 1px 4px rgba(0,0,0,0.06);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
+    <span style="font-weight:700;font-size:13px;margin-right:12px;color:#2563eb;white-space:nowrap;letter-spacing:-0.3px;">ProtoAI</span>
+    <div style="display:flex;align-items:center;gap:2px;overflow-x:auto;flex:1;scrollbar-width:none;-webkit-overflow-scrolling:touch;">
       ${links}
     </div>
+    ${pageInfo}
   </nav>
-  <div style="height:52px;"></div>`;
+  <div style="height:44px;"></div>`;
 
     if (html.includes('<body>')) {
       html = html.replace('<body>', `<body>${navHtml}`);
@@ -380,8 +384,9 @@ export async function generateProjectPages(provider, config, plannedPages, style
   });
 
   await Promise.allSettled(promises);
-  const finalPages = injectNavigation(results);
-  return { pages: finalPages };
+  // Return raw pages without injected navigation.
+  // ProtoAI's own UI handles page switching; nav is only injected at export time.
+  return { pages: results };
 }
 
 export async function regenerateSinglePage(provider, config, page, styleSpec, contentDesc, fileContents, selectedStyles, styleDesc, allPages, platform = 'pc') {

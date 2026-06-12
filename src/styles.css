@@ -417,6 +417,43 @@ body {
   flex-shrink: 0;
 }
 
+.project-dropdown-shortcuts {
+  padding: 8px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.shortcut-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+
+.shortcut-row kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  font-size: 11px;
+  font-family: var(--font-mono, 'SF Mono', Consolas, monospace);
+  background: var(--surface-inset);
+  border: 1px solid var(--border-light);
+  border-radius: 4px;
+  color: var(--fg-secondary);
+  line-height: 1;
+}
+
+.shortcut-row span {
+  margin-left: auto;
+  font-size: 11px;
+  opacity: 0.7;
+}
+
 .topbar-right {
   display: flex;
   align-items: center;
@@ -634,6 +671,58 @@ body {
   display: flex;
   align-items: center;
   gap: var(--sp-2);
+}
+
+.panel-section-header-collapsible {
+  width: 100%;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: var(--sp-2) 0;
+  font-family: var(--font-body);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-caps);
+  color: var(--fg-muted);
+  justify-content: space-between;
+}
+
+.panel-section-header-collapsible:hover {
+  color: var(--fg-secondary);
+}
+
+.panel-section-notes {
+  margin-top: auto;
+  border-top: 1px solid var(--border-subtle);
+  padding-top: var(--sp-3);
+}
+
+.notes-textarea {
+  width: 100%;
+  margin-top: var(--sp-2);
+  padding: var(--sp-3);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  background: var(--bg-input);
+  color: var(--fg);
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  resize: vertical;
+  min-height: 60px;
+  max-height: 200px;
+  outline: none;
+  transition: border-color var(--duration-fast);
+}
+
+.notes-textarea:focus {
+  border-color: var(--border-focus);
+}
+
+.notes-textarea::placeholder {
+  color: var(--fg-muted);
+  opacity: 0.6;
 }
 
 .section-label {

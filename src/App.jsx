@@ -70,6 +70,8 @@ const ACTIVE_PROJECT_KEY = 'protoai_active_project';
 const LEGACY_STATE_KEY = 'protoai_saved_state';
 const LEGACY_PLANS_KEY = 'protoai_saved_plans';
 
+const THEME_KEY = 'protoai_theme';
+
 const generateId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 
 const createEmptyProject = (name = '未命名项目') => ({
@@ -159,8 +161,17 @@ export default function App() {
     }));
   }, [activeProjectId]);
 
-  // Theme
-  const [theme, setTheme] = useState('light');
+  // Theme — persisted to localStorage
+  const [theme, setTheme] = useState(() => {
+    try {
+      const saved = localStorage.getItem(THEME_KEY);
+      if (saved === 'dark' || saved === 'light') {
+        document.documentElement.setAttribute('data-theme', saved);
+        return saved;
+      }
+    } catch {}
+    return 'light';
+  });
 
   // Project data (derived from active project)
   const projectName = currentProject.name || '';
@@ -424,6 +435,7 @@ export default function App() {
     setTheme((t) => {
       const next = t === 'light' ? 'dark' : 'light';
       document.documentElement.setAttribute('data-theme', next);
+      try { localStorage.setItem(THEME_KEY, next); } catch {}
       return next;
     });
   }, []);
@@ -901,6 +913,92 @@ export default function App() {
     });
   }, [activeProjectId, updateCurrentProject]);
 
+  // ── Project Export / Import ──
+
+  const handleExportProject = useCallback(() => {
+    try {
+      const proj = currentProject;
+      const exportData = {
+        version: 1,
+        type: 'protoai_project',
+        exportedAt: new Date().toISOString(),
+        project: proj,
+      };
+      const json = JSON.stringify(exportData, null, 2);
+      const blob = new Blob([json], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${(proj.name || 'project').replace(/[^a-zA-Z0-9\u4e00-\u9fff]/g, '_')}.protoai.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('Project export failed:', err);
+      alert('导出项目失败：' + (err.message || '未知错误'));
+    }
+  }, [currentProject]);
+
+  const importInputRef = useRef(null);
+
+  const handleImportProject = useCallback(() => {
+    importInputRef.current?.click();
+  }, []);
+
+  const handleImportFile = useCallback((e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    // Reset input so the same file can be imported again
+    e.target.value = '';
+
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const data = JSON.parse(evt.target.result);
+        if (!data.project || data.type !== 'protoai_project') {
+          alert('文件格式不正确，请选择 .protoai.json 文件');
+          return;
+        }
+        const proj = data.project;
+        // Ensure unique id to avoid collisions
+        const newId = generateId();
+        const imported = { ...proj, id: newId, name: (proj.name || '导入项目') + ' (导入)' };
+        setProjects(prev => ({ ...prev, [newId]: imported }));
+        setActiveProjectId(newId);
+        setCurrentPageIndex(0);
+        setCode(imported.pages?.[0]?.html || '');
+        setMessages([]);
+        setPlannedPages(imported.plannedPages || null);
+        setPlannedStyleSpec(imported.plannedStyleSpec || '');
+        setDetectedPlatform(imported.detectedPlatform || 'pc');
+        setUploadedFiles([]);
+        setGenerateError('');
+        setGenerateProgress('');
+        setIsGenerating(false);
+        setIsRefining(false);
+        setIsRegenerating(false);
+        setPcPages(null);
+        setMobilePages(null);
+        setPcGeneratedPages(null);
+        setMobileGeneratedPages(null);
+        setActivePlanPlatform('pc');
+
+        if (imported.pages?.length > 0 && imported.pages.some(p => p?.html)) {
+          setRightViewMode('prototype');
+        } else if (imported.plannedPages?.length > 0) {
+          const wfHtmls = generateAllWireframes(imported.plannedPages, imported.detectedPlatform || 'pc');
+          setWireframeHtmls(wfHtmls);
+          setRightViewMode('plan');
+        } else {
+          setWireframeHtmls([]);
+          setRightViewMode('empty');
+        }
+      } catch (err) {
+        alert('导入失败：文件解析错误 — ' + (err.message || ''));
+      }
+    };
+    reader.readAsText(file);
+  }, []);
+
   // ── Code & Chat ──
 
   const handleCodeChange = useCallback((newCode) => {
@@ -1290,28 +1388,85 @@ export default function App() {
     });
   }, [generatedHtml, currentPageIndex]);
 
-  // Global keyboard shortcuts for Undo/Redo
+  // Global keyboard shortcuts
   useEffect(() => {
     const handler = (e) => {
       const isCtrlOrCmd = e.ctrlKey || e.metaKey;
-      if (!isCtrlOrCmd) return;
-      // Skip if user is typing in an input/textarea
       const tag = e.target.tagName;
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || e.target.isContentEditable) return;
+      const inInput = tag === 'INPUT' || tag === 'TEXTAREA' || e.target.isContentEditable;
 
-      if (e.key === 'z' && !e.shiftKey && canUndo) {
-        e.preventDefault();
-        handleUndo();
-      } else if ((e.key === 'z' && e.shiftKey) || e.key === 'y') {
-        if (canRedo) { e.preventDefault(); handleRedo(); }
+      // ── Ctrl/Cmd shortcuts (work even in some inputs) ──
+      if (isCtrlOrCmd) {
+        // Undo
+        if (e.key === 'z' && !e.shiftKey && canUndo && !inInput) {
+          e.preventDefault();
+          handleUndo();
+          return;
+        }
+        // Redo
+        if ((e.key === 'z' && e.shiftKey) || e.key === 'y') {
+          if (canRedo && !inInput) { e.preventDefault(); handleRedo(); }
+          return;
+        }
+        // Ctrl+E — export current page
+        if (e.key === 'e' && !inInput && generatedHtml) {
+          e.preventDefault();
+          handleExport();
+          return;
+        }
+        // Ctrl+S — prevent browser save, export all pages
+        if (e.key === 's' && !inInput) {
+          e.preventDefault();
+          if (pages.filter(p => p?.html).length > 1) handleExportAll();
+          else handleExport();
+          return;
+        }
+      }
+
+      // ── Non-modifier shortcuts (skip if typing in input) ──
+      if (inInput) return;
+
+      // ArrowLeft / ArrowRight — navigate pages
+      if (e.key === 'ArrowLeft' && pages.length > 1 && !isGenerating) {
+        const prevIndex = currentPageIndex > 0 ? currentPageIndex - 1 : pages.length - 1;
+        if (pages[prevIndex]?.html) {
+          setCurrentPageIndex(prevIndex);
+          setCode(pages[prevIndex].html || '');
+          setMessages([]);
+        }
+      }
+      if (e.key === 'ArrowRight' && pages.length > 1 && !isGenerating) {
+        const nextIndex = currentPageIndex < pages.length - 1 ? currentPageIndex + 1 : 0;
+        if (pages[nextIndex]?.html) {
+          setCurrentPageIndex(nextIndex);
+          setCode(pages[nextIndex].html || '');
+          setMessages([]);
+        }
+      }
+
+      // Escape — close any open modal
+      if (e.key === 'Escape') {
+        if (showSettings) setShowSettings(false);
+        else if (showHistory) setShowHistory(false);
+        else if (showPlansHistory) setShowPlansHistory(false);
+        else if (showQrPreview) setShowQrPreview(false);
+        else if (showTemplateLibrary) setShowTemplateLibrary(false);
       }
     };
     document.addEventListener('keydown', handler);
     return () => document.removeEventListener('keydown', handler);
-  }, [canUndo, canRedo, handleUndo, handleRedo]);
+  }, [canUndo, canRedo, handleUndo, handleRedo, currentPageIndex, pages, isGenerating, generatedHtml, showSettings, showHistory, showPlansHistory, showQrPreview, showTemplateLibrary, handleExport, handleExportAll]);
 
   return (
     <div className="app-layout" data-component="App Layout" data-od-id="app-layout">
+      {/* Hidden file input for project import */}
+      <input
+        ref={importInputRef}
+        type="file"
+        accept=".json,.protoai.json"
+        style={{ display: 'none' }}
+        onChange={handleImportFile}
+      />
       <TopBar
         projectName={projectName}
         onProjectNameChange={handleProjectNameChange}
@@ -1319,6 +1474,8 @@ export default function App() {
         activeProjectId={activeProjectId}
         onSwitchProject={handleSwitchProject}
         onCreateProject={handleCreateProject}
+        onExportProject={handleExportProject}
+        onImportProject={handleImportProject}
         onOpenSettings={() => setShowSettings(true)}
         onOpenHistory={() => setShowHistory(true)}
         onOpenPlansHistory={() => setShowPlansHistory(true)}
@@ -1375,6 +1532,8 @@ export default function App() {
           activePlanPlatform={activePlanPlatform}
           onSwitchPlanPlatform={handleSwitchPlanPlatform}
           onOpenTemplateLibrary={() => setShowTemplateLibrary(true)}
+          projectNotes={currentProject.notes || ''}
+          onProjectNotesChange={(v) => updateCurrentProject({ notes: v })}
         />
 
         <RightPanel

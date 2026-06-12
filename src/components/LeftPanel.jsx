@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback } from 'react';
-import { Sparkles, FileText, Palette, Bot, Check, X, LayoutList, Trash2, Play, Monitor, Smartphone, ChevronDown, Plus, RotateCcw, Eye, Zap, Loader2, CheckCircle2, AlertCircle, ArrowRight, Layout } from 'lucide-react';
+import { Sparkles, FileText, Palette, Bot, Check, X, LayoutList, Trash2, Play, Monitor, Smartphone, ChevronDown, Plus, RotateCcw, Eye, Zap, Loader2, CheckCircle2, AlertCircle, ArrowRight, Layout, StickyNote } from 'lucide-react';
 import StyleTags from './StyleTags.jsx';
 import FileUpload from './FileUpload.jsx';
 
@@ -38,9 +38,12 @@ export default function LeftPanel({
   activePlanPlatform,
   onSwitchPlanPlatform,
   onOpenTemplateLibrary,
+  projectNotes = '',
+  onProjectNotesChange,
 }) {
   const [panelWidth, setPanelWidth] = useState(400);
   const [stylesExpanded, setStylesExpanded] = useState(false);
+  const [notesExpanded, setNotesExpanded] = useState(false);
   const isResizing = useRef(false);
 
   const handleMouseDown = useCallback((e) => {
@@ -419,6 +422,36 @@ export default function LeftPanel({
             </button>
           </>
         ) : null}
+
+        {/* Project Notes / Memo */}
+        <section className="panel-section panel-section-notes">
+          <button
+            className="panel-section-header panel-section-header-collapsible"
+            onClick={() => setNotesExpanded(v => !v)}
+            aria-expanded={notesExpanded}
+          >
+            <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <StickyNote size={14} />
+              项目备注
+            </span>
+            <ChevronDown
+              size={14}
+              style={{
+                transform: notesExpanded ? 'rotate(180deg)' : 'rotate(0deg)',
+                transition: 'transform .2s',
+              }}
+            />
+          </button>
+          {notesExpanded && (
+            <textarea
+              className="notes-textarea"
+              value={projectNotes}
+              onChange={(e) => onProjectNotesChange?.(e.target.value)}
+              placeholder="记录项目相关的备注、想法、待办事项..."
+              rows={4}
+            />
+          )}
+        </section>
       </div>
 
       {/* Resize handle */}

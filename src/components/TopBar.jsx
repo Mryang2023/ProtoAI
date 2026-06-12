@@ -18,6 +18,9 @@ import {
   Code2,
   Undo2,
   Redo2,
+  Upload,
+  Save,
+  Keyboard,
 } from 'lucide-react';
 
 export default function TopBar({
@@ -27,6 +30,8 @@ export default function TopBar({
   activeProjectId,
   onSwitchProject,
   onCreateProject,
+  onExportProject,
+  onImportProject,
   onOpenSettings,
   onOpenHistory,
   onOpenPlansHistory,
@@ -47,6 +52,7 @@ export default function TopBar({
 }) {
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [showProjectMenu, setShowProjectMenu] = useState(false);
+  const [showShortcuts, setShowShortcuts] = useState(false);
   const exportRef = useRef(null);
   const projectRef = useRef(null);
 
@@ -134,6 +140,32 @@ export default function TopBar({
                   <Plus size={14} />
                   <span>新建项目</span>
                 </button>
+              </div>
+              <div className="project-dropdown-section">
+                <button className="project-dropdown-item" onClick={() => { onExportProject?.(); setShowProjectMenu(false); }}>
+                  <Save size={14} />
+                  <span>导出项目</span>
+                </button>
+                <button className="project-dropdown-item" onClick={() => { onImportProject?.(); setShowProjectMenu(false); }}>
+                  <Upload size={14} />
+                  <span>导入项目</span>
+                </button>
+              </div>
+              <div className="project-dropdown-section">
+                <button className="project-dropdown-item" onClick={() => setShowShortcuts(v => !v)}>
+                  <Keyboard size={14} />
+                  <span>快捷键帮助</span>
+                </button>
+                {showShortcuts && (
+                  <div className="project-dropdown-shortcuts">
+                    <div className="shortcut-row"><kbd>←</kbd><kbd>→</kbd><span>切换页面</span></div>
+                    <div className="shortcut-row"><kbd>Ctrl</kbd>+<kbd>Z</kbd><span>撤销</span></div>
+                    <div className="shortcut-row"><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd><span>重做</span></div>
+                    <div className="shortcut-row"><kbd>Ctrl</kbd>+<kbd>E</kbd><span>导出当前页</span></div>
+                    <div className="shortcut-row"><kbd>Ctrl</kbd>+<kbd>S</kbd><span>导出全部</span></div>
+                    <div className="shortcut-row"><kbd>Esc</kbd><span>关闭弹窗</span></div>
+                  </div>
+                )}
               </div>
             </div>
           )}

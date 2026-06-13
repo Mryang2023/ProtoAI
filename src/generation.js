@@ -91,7 +91,7 @@ export const PLATFORM_SPECS = {
 
 // ── Style Spec Builder ──────────────────────────────────
 
-export function buildStyleSpec(selectedStyles, styleDesc) {
+export function buildStyleSpec(selectedStyles, styleDesc, referenceSite = '') {
   const primary = selectedStyles[0] || 'business';
   const spec = STYLE_SPECS[primary] || STYLE_SPECS.business;
   const labels = selectedStyles.map((s) => STYLE_DESCRIPTIONS[s]).filter(Boolean);
@@ -107,6 +107,9 @@ export function buildStyleSpec(selectedStyles, styleDesc) {
   }
   if (styleDesc) {
     result += `\n补充要求：${styleDesc}`;
+  }
+  if (referenceSite) {
+    result += `\n\n参考网站风格：请参考 ${referenceSite} 的视觉设计风格（配色、排版、圆角、阴影、间距等），在生成原型时尽量模仿该网站的设计语言和美感。如果无法访问该网站，请根据你对该网站风格的认知来设计。`;
   }
   result += '\n\n重要：所有页面必须使用相同的配色、字体和组件风格，保持视觉统一。';
   return result;
@@ -398,7 +401,7 @@ export function injectNavigation(pages) {
 
 // ── Prompt Helpers ──────────────────────────────────────
 
-export function buildContextPrompt(contentDesc, fileContents, selectedStyles, styleDesc) {
+export function buildContextPrompt(contentDesc, fileContents, selectedStyles, styleDesc, referenceSite = '') {
   let prompt = '';
   if (fileContents.length > 0) {
     prompt += '## 上传的需求文件内容\n\n';
@@ -408,10 +411,11 @@ export function buildContextPrompt(contentDesc, fileContents, selectedStyles, st
   }
   if (contentDesc) prompt += `## 页面需求描述\n${contentDesc}\n\n`;
   const styleLabels = selectedStyles.map((s) => STYLE_DESCRIPTIONS[s]).filter(Boolean);
-  if (styleLabels.length > 0 || styleDesc) {
+  if (styleLabels.length > 0 || styleDesc || referenceSite) {
     prompt += '## 风格偏好\n';
     if (styleLabels.length > 0) prompt += styleLabels.map((s) => `- ${s}`).join('\n') + '\n';
     if (styleDesc) prompt += `补充说明：${styleDesc}\n`;
+    if (referenceSite) prompt += `参考网站：${referenceSite}（请参考该网站的视觉设计风格）\n`;
     prompt += '\n';
   }
   return prompt;

@@ -16,7 +16,7 @@ function formatTime(date) {
 
 export default function useGeneration({
   aiConfig, activeProvider,
-  contentDesc, selectedStyles, styleDesc,
+  contentDesc, selectedStyles, styleDesc, referenceSite,
   updateCurrentProject, projectsRef, activeProjectId, loadedPlanId,
   setPages, pagesRef,
   currentPageIndex, setCurrentPageIndex, setCode, setMessages,
@@ -122,7 +122,8 @@ export default function useGeneration({
           }
         },
         signal,
-        confirmedRange
+        confirmedRange,
+        referenceSite
       );
 
       setPlanningPhase('complete');
@@ -183,7 +184,7 @@ export default function useGeneration({
     } finally {
       isGeneratingRef.current = false;
     }
-  }, [contentDesc, selectedStyles, styleDesc, uploadedFiles, aiConfig, activeProvider, loadedPlanId, activeProjectId, updateCurrentProject, targetPlatform, setPages, setCurrentPageIndex, setGenerateError, setRightViewMode, projectsRef]);
+  }, [contentDesc, selectedStyles, styleDesc, referenceSite, uploadedFiles, aiConfig, activeProvider, loadedPlanId, activeProjectId, updateCurrentProject, targetPlatform, setPages, setCurrentPageIndex, setGenerateError, setRightViewMode, projectsRef]);
 
   // Phase 1A: handlePlan entry — pre-analysis or full planning
   const handlePlan = useCallback(async () => {
@@ -641,6 +642,7 @@ export default function useGeneration({
         description: contentDesc || '未命名方案',
         selectedStyles: [...selectedStyles],
         styleDesc,
+        referenceSite: referenceSite || '',
         plannedPages: plannedPages || [],
         pcPages: pcPages || null,
         mobilePages: mobilePages || null,
@@ -667,7 +669,7 @@ export default function useGeneration({
     ];
     updateCurrentProject({ savedPlans: updatedPlans, loadedPlanId: schemeEntry.id });
     return schemeEntry;
-  }, [contentDesc, selectedStyles, styleDesc, plannedPages, pcPages, mobilePages, plannedStyleSpec, detectedPlatform, pageCountRange, activeProjectId, updateCurrentProject, projectsRef, pagesRef]);
+  }, [contentDesc, selectedStyles, styleDesc, referenceSite, plannedPages, pcPages, mobilePages, plannedStyleSpec, detectedPlatform, pageCountRange, activeProjectId, updateCurrentProject, projectsRef, pagesRef]);
 
   // ── Load scheme and restore generated pages ──
 
@@ -711,7 +713,7 @@ export default function useGeneration({
     try {
       const providerConfig = aiConfig[activeProvider] || {};
       const fileContents = uploadedFiles.length > 0 ? await readFileContents(uploadedFiles) : [];
-      const styleSpec = plannedStyleSpec || buildStyleSpec(selectedStyles, styleDesc);
+      const styleSpec = plannedStyleSpec || buildStyleSpec(selectedStyles, styleDesc, referenceSite);
       const referenceConstraint = getReferenceConstraint(targetIndex);
       const result = await generateSinglePage(
         activeProvider, providerConfig, page, styleSpec,
@@ -736,7 +738,7 @@ export default function useGeneration({
       setRegeneratingPageIndex(null);
       setGenerateProgress('');
     }
-  }, [isRegenerating, currentPageIndex, aiConfig, activeProvider, contentDesc, selectedStyles, styleDesc, plannedStyleSpec, uploadedFiles, detectedPlatform, setPages, setCode, setCurrentPageIndex, setRightViewMode, setGenerateError, getReferenceConstraint]);
+  }, [isRegenerating, currentPageIndex, aiConfig, activeProvider, contentDesc, selectedStyles, styleDesc, referenceSite, plannedStyleSpec, uploadedFiles, detectedPlatform, setPages, setCode, setCurrentPageIndex, setRightViewMode, setGenerateError, getReferenceConstraint]);
 
   // ── Generate single page from plan ──
 
@@ -752,7 +754,7 @@ export default function useGeneration({
     try {
       const providerConfig = aiConfig[activeProvider] || {};
       const fileContents = uploadedFiles.length > 0 ? await readFileContents(uploadedFiles) : [];
-      const styleSpec = plannedStyleSpec || buildStyleSpec(selectedStyles, styleDesc);
+      const styleSpec = plannedStyleSpec || buildStyleSpec(selectedStyles, styleDesc, referenceSite);
       const referenceConstraint = getReferenceConstraint(pageIndex);
       const result = await generateSinglePage(
         activeProvider, providerConfig, planPage, styleSpec,
@@ -776,7 +778,7 @@ export default function useGeneration({
       setRegeneratingPageIndex(null);
       setGenerateProgress('');
     }
-  }, [plannedPages, isRegenerating, isGenerating, aiConfig, activeProvider, contentDesc, selectedStyles, styleDesc, plannedStyleSpec, uploadedFiles, detectedPlatform, setPages, setCurrentPageIndex, setCode, setRightViewMode, setGenerateError, getReferenceConstraint]);
+  }, [plannedPages, isRegenerating, isGenerating, aiConfig, activeProvider, contentDesc, selectedStyles, styleDesc, referenceSite, plannedStyleSpec, uploadedFiles, detectedPlatform, setPages, setCurrentPageIndex, setCode, setRightViewMode, setGenerateError, getReferenceConstraint]);
 
   // ── Reset generation state (used during project switch) ──
 

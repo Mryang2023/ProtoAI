@@ -84,6 +84,7 @@ export default function App() {
     contentDesc: projects.contentDesc,
     selectedStyles: projects.selectedStyles,
     styleDesc: projects.styleDesc,
+    referenceSite: projects.currentProject.referenceSite || '',
     updateCurrentProject: projects.updateCurrentProject,
     projectsRef: projects.projectsRef,
     activeProjectId: projects.activeProjectId,
@@ -320,6 +321,8 @@ export default function App() {
           onContentDescChange={(v) => projects.updateCurrentProject({ contentDesc: v })}
           styleDesc={projects.styleDesc}
           onStyleDescChange={(v) => projects.updateCurrentProject({ styleDesc: v })}
+          referenceSite={projects.currentProject.referenceSite || ''}
+          onReferenceSiteChange={(v) => projects.updateCurrentProject({ referenceSite: v })}
           selectedStyles={projects.selectedStyles}
           onToggleStyle={projects.toggleStyle}
           onPlan={generation.handlePlan}

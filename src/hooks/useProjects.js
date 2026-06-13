@@ -15,6 +15,7 @@ export const createEmptyProject = (name = '未命名项目') => ({
   contentDesc: '',
   styleDesc: '',
   selectedStyles: ['business'],
+  referenceSite: '',
   pages: [],
   history: [],
   savedPlans: [],

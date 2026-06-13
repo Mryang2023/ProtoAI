@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { Sparkles, FileText, Palette, Bot, Check, X, LayoutList, Trash2, Play, Monitor, Smartphone, ChevronDown, Plus, RotateCcw, Eye, Zap, Loader2, CheckCircle2, AlertCircle, ArrowRight, Layout, StickyNote, Hash, Save } from 'lucide-react';
+import { Sparkles, FileText, Palette, Bot, Check, X, LayoutList, Trash2, Play, Monitor, Smartphone, ChevronDown, Plus, RotateCcw, Eye, Zap, Loader2, CheckCircle2, AlertCircle, ArrowRight, Layout, StickyNote, Hash, Save, Globe } from 'lucide-react';
 import StyleTags from './StyleTags.jsx';
 import FileUpload from './FileUpload.jsx';
 
@@ -8,6 +8,8 @@ export default function LeftPanel({
   onContentDescChange,
   styleDesc,
   onStyleDescChange,
+  referenceSite,
+  onReferenceSiteChange,
   selectedStyles,
   onToggleStyle,
   onPlan,
@@ -158,6 +160,27 @@ export default function LeftPanel({
                   aria-label="风格补充描述"
                 />
                 <span className="char-count">{styleDesc.length}/500</span>
+              </div>
+
+              {/* Reference website URL */}
+              <div className="reference-site-field" style={{ marginTop: 'var(--sp-2)' }}>
+                <div className="reference-site-label">
+                  <Globe size={12} />
+                  <span>参考网站（可选）</span>
+                </div>
+                <input
+                  type="url"
+                  className="reference-site-input"
+                  value={referenceSite || ''}
+                  onChange={(e) => onReferenceSiteChange?.(e.target.value)}
+                  placeholder="例如：https://stripe.com、https://apple.com"
+                  aria-label="参考网站URL"
+                />
+                {referenceSite && (
+                  <p className="section-hint" style={{ margin: '4px 0 0', fontSize: 10 }}>
+                    AI 生成时会参考该网站的视觉风格
+                  </p>
+                )}
               </div>
             </>
           )}

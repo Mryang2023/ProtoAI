@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useMemo } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { Sparkles, FileText, Palette, Bot, Check, X, LayoutList, Trash2, Play, Monitor, Smartphone, ChevronDown, Plus, RotateCcw, Eye, Zap, Loader2, CheckCircle2, AlertCircle, ArrowRight, Layout, StickyNote, Hash, Save } from 'lucide-react';
 import StyleTags from './StyleTags.jsx';
 import FileUpload from './FileUpload.jsx';
@@ -34,8 +34,10 @@ export default function LeftPanel({
   progressTotal,
   targetPlatform,
   onTargetPlatformChange,
-  pageCountRange,
-  onPageCountRangeChange,
+  pageEstimate,
+  isPreAnalyzing,
+  awaitingPageConfirm,
+  onConfirmPageCount,
   isDualPlatform,
   activePlanPlatform,
   onSwitchPlanPlatform,
@@ -68,67 +70,15 @@ export default function LeftPanel({
 
   const hasInput = contentDesc.trim() || files.length > 0;
 
-  // Compute page count suggestion based on content
-  const pageSuggestion = useMemo(() => {
-    const text = (contentDesc || '').toLowerCase();
-    const len = text.length;
-    if (len < 10 && files.length === 0) return null;
+  // Local editable copy of the AI page estimate (user can adjust via sliders)
+  const [localEstimate, setLocalEstimate] = useState(null);
+  useEffect(() => {
+    if (pageEstimate) setLocalEstimate(pageEstimate);
+  }, [pageEstimate]);
+  const displayEstimate = localEstimate || pageEstimate;
 
-    let complexity = 1; // 1=simple, 2=medium, 3=complex
-    // Complexity keywords
-    const complexKeywords = ['管理系统', '后台', 'admin', 'dashboard', 'erp', 'crm', '平台', '电商', '商城', 'shopping', 'mall', 'oa', 'sass', 'saas', '多端', '多角色', '权限', '数据分析', '报表', '审批', '工作流'];
-    const mediumKeywords = ['官网', '展示', '企业', 'portfolio', 'landing', '博客', 'blog', '文档', 'docs', '帮助', 'help', '介绍', '产品', '服务', '功能', 'feature'];
-
-    let score = 0;
-    for (const kw of complexKeywords) { if (text.includes(kw)) score += 2; }
-    for (const kw of mediumKeywords) { if (text.includes(kw)) score += 1; }
-
-    // Length factor
-    if (len > 500) score += 2;
-    else if (len > 200) score += 1;
-
-    // File factor
-    if (files.length >= 3) score += 2;
-    else if (files.length >= 1) score += 1;
-
-    if (score >= 5) complexity = 3;
-    else if (score >= 2) complexity = 2;
-
-    const ranges = {
-      1: { min: 3, max: 8, recommended: 5 },
-      2: { min: 5, max: 15, recommended: 8 },
-      3: { min: 10, max: 30, recommended: 18 },
-    };
-    return ranges[complexity];
-  }, [contentDesc, files]);
-
-  // Local state for user-adjusted range (synced with pageSuggestion)
-  const [localRange, setLocalRange] = useState(null);
-  const [pageCountExpanded, setPageCountExpanded] = useState(false);
-
-  // Sync local range with suggestion or prop
-  const effectiveRange = useMemo(() => {
-    if (localRange) return localRange;
-    if (pageCountRange) return pageCountRange;
-    return pageSuggestion;
-  }, [localRange, pageCountRange, pageSuggestion]);
-
-  // When user adjusts slider
-  const handleRangeChange = useCallback((min, max) => {
-    const recommended = Math.round((min + max) / 2);
-    const newRange = { min, max, recommended };
-    setLocalRange(newRange);
-    onPageCountRangeChange?.(newRange);
-  }, [onPageCountRangeChange]);
-
-  // Reset to AI suggestion
-  const handleResetRange = useCallback(() => {
-    setLocalRange(null);
-    onPageCountRangeChange?.(pageSuggestion);
-  }, [pageSuggestion, onPageCountRangeChange]);
-
-  const isCustomized = localRange && pageSuggestion &&
-    (localRange.min !== pageSuggestion.min || localRange.max !== pageSuggestion.max);
+  const isCustomized = displayEstimate && pageEstimate &&
+    (displayEstimate.min !== pageEstimate.min || displayEstimate.max !== pageEstimate.max);
 
   // Compute generation stats
   const generatedCount = pages?.filter(p => p?.html && !p?.error).length || 0;
@@ -471,107 +421,112 @@ export default function LeftPanel({
           </div>
         )}
 
-        {/* Page count range selector — shown before planning when suggestion is available */}
-        {!plannedPages && pageSuggestion && hasInput && (
+        {/* Page count pre-analysis result — shown after AI quick analysis */}
+        {!plannedPages && awaitingPageConfirm && displayEstimate && (
           <div className="page-count-selector" style={{ marginTop: 'var(--sp-3)' }}>
-            <button
-              className="panel-section-header panel-section-header-collapsible"
-              onClick={() => setPageCountExpanded(v => !v)}
-              style={{ padding: 0, border: 'none', background: 'none', cursor: 'pointer', width: '100%' }}
-            >
-              <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--fg-muted)' }}>
-                <Hash size={13} />
-                页面数量范围
-              </span>
-              <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}>
-                <span style={{
-                  background: 'var(--accent-subtle)', color: 'var(--accent)',
-                  padding: '1px 8px', borderRadius: 9999, fontSize: 11, fontWeight: 600,
-                }}>
-                  {effectiveRange?.recommended || '?'} 页
-                </span>
-                <ChevronDown
-                  size={13}
-                  style={{
-                    color: 'var(--fg-muted)',
-                    transform: pageCountExpanded ? 'rotate(180deg)' : 'rotate(0deg)',
-                    transition: 'transform .2s',
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--fg-muted)', marginBottom: 'var(--sp-2)' }}>
+              <Hash size={13} />
+              <span>页面数量预估</span>
+            </div>
+
+            {/* AI suggestion display */}
+            <div className="page-count-estimate-card">
+              <div className="page-count-estimate-header">
+                <Sparkles size={13} style={{ color: 'var(--accent)' }} />
+                <span className="page-count-estimate-title">AI 分析建议</span>
+              </div>
+              <p className="page-count-estimate-reason">{pageEstimate?.reason || '根据需求复杂度分析'}</p>
+              <div className="page-count-estimate-range">
+                <span className="page-count-estimate-num">{displayEstimate.min}</span>
+                <span className="page-count-estimate-dash">—</span>
+                <span className="page-count-estimate-num">{displayEstimate.max}</span>
+                <span className="page-count-estimate-unit">页</span>
+                <span className="page-count-estimate-rec">推荐 {displayEstimate.recommended} 页</span>
+              </div>
+            </div>
+
+            {/* Adjustable sliders */}
+            <div className="page-count-body" style={{ marginTop: 'var(--sp-2)' }}>
+              <div className="page-count-slider-row">
+                <label className="page-count-label">最少</label>
+                <input
+                  type="range"
+                  className="page-count-slider"
+                  min={Math.max(1, (pageEstimate?.min || 3) - 3)}
+                  max={(pageEstimate?.max || 15) + 5}
+                  step={1}
+                  value={displayEstimate.min}
+                  onChange={(e) => {
+                    const newMin = parseInt(e.target.value, 10);
+                    setLocalEstimate(prev => ({
+                      ...prev,
+                      min: Math.min(newMin, prev.max - 1),
+                      recommended: Math.round((Math.min(newMin, prev.max - 1) + prev.max) / 2),
+                    }));
                   }}
                 />
-              </span>
-            </button>
-
-            {pageCountExpanded && (
-              <div className="page-count-body" style={{ marginTop: 'var(--sp-2)' }}>
-                <p className="section-hint" style={{ margin: '0 0 8px', fontSize: 11 }}>
-                  AI 建议 <strong>{pageSuggestion.min}–{pageSuggestion.max}</strong> 页
-                  {isCustomized && <span style={{ color: 'var(--accent)', marginLeft: 4 }}>（已自定义）</span>}
-                </p>
-
-                {/* Min slider */}
-                <div className="page-count-slider-row">
-                  <label className="page-count-label">最少</label>
-                  <input
-                    type="range"
-                    className="page-count-slider"
-                    min={Math.max(1, pageSuggestion.min - 3)}
-                    max={effectiveRange?.max || pageSuggestion.max}
-                    step={1}
-                    value={effectiveRange?.min || pageSuggestion.min}
-                    onChange={(e) => {
-                      const newMin = parseInt(e.target.value, 10);
-                      const currentMax = effectiveRange?.max || pageSuggestion.max;
-                      handleRangeChange(Math.min(newMin, currentMax - 1), currentMax);
-                    }}
-                  />
-                  <span className="page-count-value">{effectiveRange?.min || pageSuggestion.min}</span>
-                </div>
-
-                {/* Max slider */}
-                <div className="page-count-slider-row">
-                  <label className="page-count-label">最多</label>
-                  <input
-                    type="range"
-                    className="page-count-slider"
-                    min={effectiveRange?.min || pageSuggestion.min}
-                    max={Math.min(60, pageSuggestion.max + 15)}
-                    step={1}
-                    value={effectiveRange?.max || pageSuggestion.max}
-                    onChange={(e) => {
-                      const newMax = parseInt(e.target.value, 10);
-                      const currentMin = effectiveRange?.min || pageSuggestion.min;
-                      handleRangeChange(currentMin, Math.max(newMax, currentMin + 1));
-                    }}
-                  />
-                  <span className="page-count-value">{effectiveRange?.max || pageSuggestion.max}</span>
-                </div>
-
-                {/* Range visualization */}
-                <div className="page-count-range-bar">
-                  <div
-                    className="page-count-range-fill"
-                    style={{
-                      left: `${((effectiveRange?.min || pageSuggestion.min) - Math.max(1, pageSuggestion.min - 3)) / (Math.min(60, pageSuggestion.max + 15) - Math.max(1, pageSuggestion.min - 3)) * 100}%`,
-                      right: `${100 - ((effectiveRange?.max || pageSuggestion.max) - Math.max(1, pageSuggestion.min - 3)) / (Math.min(60, pageSuggestion.max + 15) - Math.max(1, pageSuggestion.min - 3)) * 100}%`,
-                    }}
-                  />
-                </div>
-
-                {isCustomized && (
-                  <button
-                    className="page-count-reset"
-                    onClick={handleResetRange}
-                  >
-                    <RotateCcw size={11} />
-                    重置为 AI 建议
-                  </button>
-                )}
+                <span className="page-count-value">{displayEstimate.min}</span>
               </div>
+              <div className="page-count-slider-row">
+                <label className="page-count-label">最多</label>
+                <input
+                  type="range"
+                  className="page-count-slider"
+                  min={displayEstimate.min}
+                  max={Math.min(60, (pageEstimate?.max || 15) + 15)}
+                  step={1}
+                  value={displayEstimate.max}
+                  onChange={(e) => {
+                    const newMax = parseInt(e.target.value, 10);
+                    setLocalEstimate(prev => ({
+                      ...prev,
+                      max: Math.max(newMax, prev.min + 1),
+                      recommended: Math.round((prev.min + Math.max(newMax, prev.min + 1)) / 2),
+                    }));
+                  }}
+                />
+                <span className="page-count-value">{displayEstimate.max}</span>
+              </div>
+            </div>
+
+            {/* Reset button if user customized */}
+            {isCustomized && (
+              <button
+                className="page-count-reset"
+                onClick={() => setLocalEstimate(pageEstimate)}
+              >
+                <RotateCcw size={11} />
+                重置为 AI 建议
+              </button>
             )}
+
+            {/* Confirm button */}
+            <button
+              className="btn btn-primary page-count-confirm-btn"
+              onClick={() => onConfirmPageCount?.({
+                min: displayEstimate.min,
+                max: displayEstimate.max,
+                recommended: displayEstimate.recommended,
+              })}
+              disabled={isGenerating}
+            >
+              <Check size={14} />
+              确认，开始规划（{displayEstimate.min}–{displayEstimate.max} 页）
+            </button>
           </div>
         )}
 
-        {!plannedPages ? (
+        {/* Pre-analyzing state */}
+        {!plannedPages && isPreAnalyzing && (
+          <div className="page-count-preanalyzing" style={{ marginTop: 'var(--sp-3)' }}>
+            <div className="page-count-preanalyzing-inner">
+              <span className="spinner" />
+              <span>正在概要分析需求...</span>
+            </div>
+          </div>
+        )}
+
+        {!plannedPages && !awaitingPageConfirm && !isPreAnalyzing ? (
           <>
             {onOpenTemplateLibrary && (
               <button
@@ -587,11 +542,13 @@ export default function LeftPanel({
             <button
               className="btn-generate"
               onClick={onPlan}
-              disabled={isGenerating || !hasInput}
+              disabled={isGenerating || isPreAnalyzing || !hasInput}
               aria-label="规划方案"
               style={{ marginTop: 'var(--sp-2)' }}
             >
-              {isGenerating ? (
+              {isPreAnalyzing ? (
+                <><span className="spinner" />分析需求中...</>
+              ) : isGenerating ? (
                 <><span className="spinner" />分析中...</>
               ) : (
                 <><Sparkles size={18} />规划方案{targetPlatform === 'both' ? '（双端）' : ''}</>

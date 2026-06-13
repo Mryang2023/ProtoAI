@@ -5,6 +5,7 @@ import {
   planProject, generateProjectPages, generateSinglePage,
   readFileContents, buildStyleSpec, parsePartialPlan,
   extractReferenceTemplate, buildReferenceConstraint,
+  estimatePageCount,
 } from '../aiService.js';
 
 function formatTime(date) {
@@ -33,8 +34,11 @@ export default function useGeneration({
   const [mobileGeneratedPages, setMobileGeneratedPages] = useState(null);
   const [wireframeHtmls, setWireframeHtmls] = useState([]);
 
-  // ── Page count range ──
+  // ── Page count pre-analysis ──
   const [pageCountRange, setPageCountRange] = useState(null); // { min, max, recommended } or null
+  const [pageEstimate, setPageEstimate] = useState(null); // { min, max, recommended, reason } from AI
+  const [isPreAnalyzing, setIsPreAnalyzing] = useState(false); // pre-analysis in progress
+  const [awaitingPageConfirm, setAwaitingPageConfirm] = useState(false); // waiting for user to confirm range
 
   // ── Generation state ──
   const [isGenerating, setIsGenerating] = useState(false);
@@ -65,7 +69,13 @@ export default function useGeneration({
 
   // ── Phase 1: Plan ──
 
-  const handlePlan = useCallback(async () => {
+  // Ref to track latest confirmed range (avoids stale closure in two-phase flow)
+  const pageCountRangeRef = useRef(pageCountRange);
+  pageCountRangeRef.current = pageCountRange;
+
+  // Phase 1B: Full planning with confirmed page count range
+  const doFullPlanning = useCallback(async () => {
+    const confirmedRange = pageCountRangeRef.current;
     setIsGenerating(true);
     isGeneratingRef.current = true;
     abortControllerRef.current = new AbortController();
@@ -80,6 +90,7 @@ export default function useGeneration({
     setPlanningStreamText('');
     setPlanningDiscoveredPages([]);
     setPlanningPhase('thinking');
+    setAwaitingPageConfirm(false);
 
     setPages([]);
     setStreamingHtml('');
@@ -111,7 +122,7 @@ export default function useGeneration({
           }
         },
         signal,
-        pageCountRange
+        confirmedRange
       );
 
       setPlanningPhase('complete');
@@ -119,7 +130,6 @@ export default function useGeneration({
       setGenerateProgress('');
       setIsGenerating(false);
       setPlanningStreamText('');
-      // Note: isGeneratingRef reset handled by finally block
 
       if (plan.platform === 'both') {
         setPcPages(plan.pcPages);
@@ -151,8 +161,8 @@ export default function useGeneration({
         mobilePages: plan.mobilePages || null,
         styleSpec: plan.styleSpec,
         platform: plan.platform || 'pc',
-        pageCountRange: pageCountRange || null,
-        savedSchemeId: null, // will be set when user explicitly saves as scheme
+        pageCountRange: confirmedRange,
+        savedSchemeId: null,
       };
       const currentPlans = projectsRef.current[activeProjectId]?.savedPlans || [];
       const updatedPlans = [planEntry, ...currentPlans.filter((p) => p.id !== loadedPlanId)];
@@ -171,10 +181,55 @@ export default function useGeneration({
       setPlanningStreamText('');
       setPlanningPhase('');
     } finally {
-      // Always reset the generating ref to prevent UI lock-up
       isGeneratingRef.current = false;
     }
-  }, [contentDesc, selectedStyles, styleDesc, uploadedFiles, aiConfig, activeProvider, loadedPlanId, activeProjectId, updateCurrentProject, targetPlatform, pageCountRange, setPages, setCurrentPageIndex, setGenerateError, setRightViewMode, projectsRef]);
+  }, [contentDesc, selectedStyles, styleDesc, uploadedFiles, aiConfig, activeProvider, loadedPlanId, activeProjectId, updateCurrentProject, targetPlatform, setPages, setCurrentPageIndex, setGenerateError, setRightViewMode, projectsRef]);
+
+  // Phase 1A: handlePlan entry — pre-analysis or full planning
+  const handlePlan = useCallback(async () => {
+    // If page count range already confirmed, go straight to full planning
+    if (pageCountRange) {
+      await doFullPlanning();
+      return;
+    }
+
+    // Phase 0: Quick pre-analysis to estimate page count
+    setIsPreAnalyzing(true);
+    setGenerateError('');
+    setGenerateProgress('正在概要分析需求...');
+    setPageEstimate(null);
+    setAwaitingPageConfirm(false);
+
+    try {
+      const fileContents = uploadedFiles.length > 0 ? await readFileContents(uploadedFiles) : [];
+      const providerConfig = aiConfig[activeProvider] || {};
+      const estimate = await estimatePageCount(activeProvider, providerConfig, contentDesc, fileContents);
+      setPageEstimate(estimate);
+      setPageCountRange({ min: estimate.min, max: estimate.max, recommended: estimate.recommended });
+      setAwaitingPageConfirm(true);
+      setGenerateProgress('');
+    } catch (err) {
+      if (err.name === 'AbortError') {
+        setGenerateProgress('');
+        return;
+      }
+      // If pre-analysis fails, proceed with default range
+      setPageCountRange({ min: 5, max: 15, recommended: 8 });
+      setAwaitingPageConfirm(true);
+      setGenerateProgress('');
+    } finally {
+      setIsPreAnalyzing(false);
+    }
+  }, [pageCountRange, doFullPlanning, contentDesc, uploadedFiles, aiConfig, activeProvider, setGenerateError]);
+
+  // Confirm page count and proceed to full planning
+  const handleConfirmPageCount = useCallback((range) => {
+    setPageCountRange(range);
+    pageCountRangeRef.current = range; // update ref immediately for doFullPlanning
+    setAwaitingPageConfirm(false);
+    // Call full planning directly — doFullPlanning reads from pageCountRangeRef
+    doFullPlanning();
+  }, [doFullPlanning]);
 
   // ── Switch platform tabs in dual mode ──
 
@@ -761,6 +816,7 @@ export default function useGeneration({
     detectedPlatform, setDetectedPlatform,
     targetPlatform, setTargetPlatform,
     pageCountRange, setPageCountRange,
+    pageEstimate, isPreAnalyzing, awaitingPageConfirm,
     pcPages, setPcPages,
     mobilePages, setMobilePages,
     activePlanPlatform, setActivePlanPlatform,
@@ -781,7 +837,7 @@ export default function useGeneration({
     // Refs
     userSelectedPageRef, abortControllerRef,
     // Actions
-    handlePlan, handleConfirmPlan, handleCancelPlan,
+    handlePlan, handleConfirmPageCount, handleConfirmPlan, handleCancelPlan,
     handleCancelGeneration, handleSwitchPlanPlatform,
     handleViewPlan, handleViewPagePrototype,
     handleLoadPlanWithWireframe, handleLoadScheme, handleSaveScheme,

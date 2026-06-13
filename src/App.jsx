@@ -349,8 +349,10 @@ export default function App() {
           progressTotal={generation.progressTotal}
           targetPlatform={generation.targetPlatform}
           onTargetPlatformChange={generation.setTargetPlatform}
-          pageCountRange={generation.pageCountRange}
-          onPageCountRangeChange={generation.setPageCountRange}
+          pageEstimate={generation.pageEstimate}
+          isPreAnalyzing={generation.isPreAnalyzing}
+          awaitingPageConfirm={generation.awaitingPageConfirm}
+          onConfirmPageCount={generation.handleConfirmPageCount}
           isDualPlatform={!!generation.pcPages && !!generation.mobilePages}
           activePlanPlatform={generation.activePlanPlatform}
           onSwitchPlanPlatform={generation.handleSwitchPlanPlatform}

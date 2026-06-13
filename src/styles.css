@@ -4409,12 +4409,96 @@ body {
 .page-count-selector {
   background: var(--bg-subtle, color-mix(in srgb, var(--fg) 3%, transparent));
   border-radius: var(--radius-md);
-  padding: var(--sp-2) var(--sp-3);
+  padding: var(--sp-3);
   border: 1px solid var(--border-light);
+  animation: page-count-expand 0.25s ease-out;
 }
 
-.page-count-body {
-  animation: page-count-expand 0.2s ease-out;
+.page-count-estimate-card {
+  background: var(--bg, white);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  padding: var(--sp-2) var(--sp-3);
+}
+
+.page-count-estimate-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.page-count-estimate-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--fg);
+}
+
+.page-count-estimate-reason {
+  font-size: 11px;
+  color: var(--fg-muted);
+  margin: 0 0 8px;
+  line-height: 1.4;
+}
+
+.page-count-estimate-range {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+}
+
+.page-count-estimate-num {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+
+.page-count-estimate-dash {
+  font-size: 14px;
+  color: var(--fg-muted);
+}
+
+.page-count-estimate-unit {
+  font-size: 13px;
+  color: var(--fg-muted);
+  margin-left: 2px;
+}
+
+.page-count-estimate-rec {
+  font-size: 11px;
+  color: var(--accent);
+  margin-left: auto;
+  background: var(--accent-subtle);
+  padding: 2px 8px;
+  border-radius: 9999px;
+  font-weight: 500;
+}
+
+.page-count-confirm-btn {
+  margin-top: var(--sp-2);
+  width: 100%;
+  justify-content: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.page-count-preanalyzing {
+  margin-top: var(--sp-3);
+}
+
+.page-count-preanalyzing-inner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: var(--sp-3);
+  background: var(--bg-subtle, color-mix(in srgb, var(--fg) 3%, transparent));
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-light);
+  font-size: 13px;
+  color: var(--fg-muted);
 }
 
 @keyframes page-count-expand {

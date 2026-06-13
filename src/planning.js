@@ -7,6 +7,68 @@ import { callAI, callAIStream } from './providers.js';
 import { buildStyleSpec, buildContextPrompt } from './generation.js';
 
 /**
+ * Phase 0: Quick pre-analysis to estimate page count range.
+ * Lightweight AI call — returns { min, max, recommended, reason }.
+ */
+export async function estimatePageCount(provider, config, contentDesc, fileContents, signal) {
+  if (!config?.apiKey) throw new Error('请先在设置中配置 AI 模型的 API Key');
+
+  const contextSummary = contentDesc
+    ? `用户需求描述（${contentDesc.length}字）：${contentDesc.slice(0, 600)}${contentDesc.length > 600 ? '...' : ''}`
+    : '用户未提供文字描述，仅上传了文件。';
+
+  const fileHint = fileContents?.length
+    ? `\n附带 ${fileContents.length} 个文件（${fileContents.map(f => f.name).join(', ')}）`
+    : '';
+
+  const systemPrompt = `你是一个资深产品经理。用户会给你一段产品需求描述，你需要快速分析后，估算这个项目需要多少个页面。
+
+分析维度：
+- 功能模块数量（用户、商品、订单、报表等）
+- 页面复杂度（表单、列表、详情、图表等）
+- 用户角色（多角色需要更多页面）
+- 业务流程（审批、工作流等增加页面）
+
+返回格式（严格 JSON，不要输出其他内容）：
+{
+  "min": 最少需要的页面数量,
+  "max": 合理的最大页面数量,
+  "recommended": 你最推荐的页面数量,
+  "reason": "一句话解释估算理由（中文，30字以内）"
+}
+
+注意：
+- min 不能小于 1
+- max 不能超过 50
+- recommended 应在 min 和 max 之间
+- 要合理，不要过多也不要过少`;
+
+  const userPrompt = contextSummary + fileHint;
+
+  const response = await callAI(provider, config, systemPrompt, userPrompt, signal);
+
+  let parsed;
+  try {
+    const jsonMatch = response.content.match(/\{[\s\S]*\}/);
+    parsed = JSON.parse(jsonMatch ? jsonMatch[0] : response.content);
+  } catch {
+    // Fallback: return a reasonable default
+    return { min: 5, max: 15, recommended: 8, reason: 'AI 预分析未返回有效结果，使用默认范围' };
+  }
+
+  const min = Math.max(1, Math.min(50, parsed.min || 5));
+  const max = Math.max(min + 1, Math.min(50, parsed.max || 15));
+  const recommended = Math.max(min, Math.min(max, parsed.recommended || Math.round((min + max) / 2)));
+
+  return {
+    min,
+    max,
+    recommended,
+    reason: parsed.reason || `根据需求分析，建议 ${min}–${max} 个页面`,
+  };
+}
+
+/**
  * Phase 1: Analyze requirements and plan page structure.
  * Accepts an optional `onStream(text)` callback for real-time progress.
  * Returns { pages, styleSpec, platform } or { pcPages, mobilePages, styleSpec, platform: 'both' }

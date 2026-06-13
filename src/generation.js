@@ -253,6 +253,60 @@ export function buildReferenceConstraint(refTemplate) {
   return parts.join('\n');
 }
 
+// ── Theme Consistency Utilities ──────────────────────────
+
+/**
+ * Extract :root CSS variables from HTML's first <style> block.
+ * Returns the full :root { ... } block string, or empty string if not found.
+ */
+function extractRootCss(html) {
+  if (!html) return '';
+  const styleMatch = html.match(/<style[^>]*>([\s\S]*?)<\/style>/i);
+  if (!styleMatch) return '';
+  const css = styleMatch[1];
+  // Match :root block — handle nested braces
+  const rootStart = css.indexOf(':root');
+  if (rootStart === -1) return '';
+  const braceStart = css.indexOf('{', rootStart);
+  if (braceStart === -1) return '';
+  let depth = 1;
+  let i = braceStart + 1;
+  while (i < css.length && depth > 0) {
+    if (css[i] === '{') depth++;
+    else if (css[i] === '}') depth--;
+    i++;
+  }
+  return css.slice(rootStart, i).trim();
+}
+
+/**
+ * Inject shared :root CSS variables into a page's first <style> block.
+ * Prepends the shared :root block so it overrides the page's own :root values.
+ */
+function injectRootCss(html, rootCss) {
+  if (!html || !rootCss) return html;
+  const styleMatch = html.match(/<style[^>]*>/i);
+  if (!styleMatch) return html;
+  const insertPos = styleMatch.index + styleMatch[0].length;
+  // Check if the page already has a :root block — if so, inject variables at the start of it
+  const existingRoot = html.indexOf(':root', insertPos);
+  const styleClose = html.indexOf('</style>', insertPos);
+  if (existingRoot !== -1 && existingRoot < styleClose) {
+    // Page has its own :root — inject shared variables at the beginning of :root block
+    const bracePos = html.indexOf('{', existingRoot);
+    if (bracePos !== -1 && bracePos < styleClose) {
+      // Extract just the variable declarations from shared rootCss
+      const varLines = rootCss.match(/--[\w-]+\s*:\s*[^;]+;/g) || [];
+      if (varLines.length === 0) return html;
+      const injection = '\n/* ProtoAI 统一主题变量 */\n' + varLines.join('\n') + '\n';
+      return html.slice(0, bracePos + 1) + injection + html.slice(bracePos + 1);
+    }
+  }
+  // No existing :root — prepend the full shared :root block
+  const injection = '\n/* ProtoAI 统一主题 */\n' + rootCss + '\n';
+  return html.slice(0, insertPos) + injection + html.slice(insertPos);
+}
+
 // ── HTML Utilities ──────────────────────────────────────
 
 export function extractHtml(text) {
@@ -593,6 +647,19 @@ export async function generateProjectPages(provider, config, plannedPages, style
     });
 
     await Promise.allSettled(remainingPromises);
+  }
+
+  // ── Phase 3: Enforce theme consistency across all pages ──
+  // Extract :root CSS variables from the first (reference) page and inject into all other pages
+  if (results[0]?.html) {
+    const rootCss = extractRootCss(results[0].html);
+    if (rootCss) {
+      for (let i = 1; i < results.length; i++) {
+        if (results[i]?.html) {
+          results[i] = { ...results[i], html: injectRootCss(results[i].html, rootCss) };
+        }
+      }
+    }
   }
 
   // Return raw pages without injected navigation.

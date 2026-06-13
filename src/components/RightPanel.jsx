@@ -77,10 +77,34 @@ export default function RightPanel({
       if (e.data?.type === 'protoai-nav') {
         const targetHref = e.data.href;
         const list = plannedPages || pages;
-        const idx = list.findIndex((p, i) => {
-          if (!p) return false;
-          return pageFileName(p, i) === targetHref;
-        });
+
+        // Multi-strategy matching: exact filename → normalized name → fuzzy contains
+        let idx = -1;
+
+        // Strategy 1: Exact filename match
+        idx = list.findIndex((p, i) => pageFileName(p, i) === targetHref);
+
+        // Strategy 2: Normalized name match (lowercase, no spaces/special chars)
+        if (idx < 0) {
+          const normalize = (s) => (s || '').toLowerCase().replace(/[^a-z0-9\u4e00-\u9fff]/g, '');
+          const targetNorm = normalize(targetHref.replace(/\.html?$/i, ''));
+          idx = list.findIndex((p, i) => {
+            const fnNorm = normalize(pageFileName(p, i).replace(/\.html?$/i, ''));
+            const nameNorm = normalize(p?.name || '');
+            return fnNorm === targetNorm || nameNorm === targetNorm;
+          });
+        }
+
+        // Strategy 3: Substring/fuzzy — AI may use short names like "products" for "02_Products"
+        if (idx < 0) {
+          const targetLow = targetHref.toLowerCase().replace(/\.html?$/i, '').replace(/[^a-z0-9\u4e00-\u9fff]/g, '');
+          idx = list.findIndex((p, i) => {
+            const fn = pageFileName(p, i).toLowerCase().replace(/\.html?$/i, '').replace(/[^a-z0-9\u4e00-\u9fff]/g, '');
+            const name = (p?.name || '').toLowerCase().replace(/[^a-z0-9\u4e00-\u9fff]/g, '');
+            return fn.includes(targetLow) || targetLow.includes(name) || name.includes(targetLow);
+          });
+        }
+
         if (idx >= 0 && pages[idx]?.html) {
           onPageChange(idx);
         }
@@ -117,8 +141,10 @@ export default function RightPanel({
         : (streamingHtml || ''))
     : (rightViewMode === 'prototype' ? generatedHtml : '');
 
-  // Inject link interceptor for cross-page navigation (only when not streaming)
-  const previewHtml = rawPreviewHtml && !streamingHtml
+  // Inject link interceptor — skip only when showing streaming (incomplete) HTML,
+  // always inject for completed pages even during generation
+  const isShowingStreaming = isGenerating && userPreviewIndex === null && !!streamingHtml;
+  const previewHtml = rawPreviewHtml && !isShowingStreaming
     ? injectLinkInterceptor(rawPreviewHtml)
     : rawPreviewHtml;
 

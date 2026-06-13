@@ -420,6 +420,20 @@ export default function RightPanel({
 function PlanningAnalysisView({ phase, discoveredPages, streamText }) {
   const streamEndRef = useRef(null);
   const [showRawDetail, setShowRawDetail] = useState(false);
+  const [elapsed, setElapsed] = useState(0);
+  const [thoughtIndex, setThoughtIndex] = useState(0);
+
+  // Elapsed timer
+  useEffect(() => {
+    const t = setInterval(() => setElapsed(s => s + 1), 1000);
+    return () => clearInterval(t);
+  }, []);
+
+  // Rotate thinking thoughts
+  useEffect(() => {
+    const t = setInterval(() => setThoughtIndex(i => i + 1), 2800);
+    return () => clearInterval(t);
+  }, []);
 
   // Auto-scroll stream text
   useEffect(() => {
@@ -440,95 +454,134 @@ function PlanningAnalysisView({ phase, discoveredPages, streamText }) {
   const phaseOrder = ['thinking', 'planning', 'detailing', 'complete'];
   const currentIdx = phaseOrder.indexOf(phase);
 
-  // Extract readable insights from stream text
+  // Thinking thoughts — rotate based on phase
+  const thinkingThoughts = {
+    thinking: ['正在理解需求描述中的关键词...', '分析目标用户和使用场景...', '识别核心功能和交互模式...', '评估内容结构和信息层级...'],
+    planning: ['设计最优页面架构...', '规划导航关系和用户流程...', '确定页面之间的跳转逻辑...', '构建响应式布局方案...'],
+    detailing: ['细化页面区块和组件...', '设计交互细节和状态变化...', '优化视觉层次和排版...', '完善每个页面的功能描述...'],
+    complete: ['方案验证通过...', '准备开始生成原型...'],
+  };
+  const thoughts = thinkingThoughts[phase] || thinkingThoughts.thinking;
+  const currentThought = thoughts[thoughtIndex % thoughts.length];
+
   const readableLines = extractReadableInsights(streamText, discoveredPages);
 
   return (
     <div className="planning-view" data-component="Planning Analysis View">
-      {/* Header with animated brain icon */}
-      <div className="planning-header">
-        <div className="planning-brain-icon" style={{ '--phase-color': currentPhase.color }}>
-          <PhaseIcon size={22} />
-          <span className="planning-brain-pulse" />
+      {/* Ambient background glow */}
+      <div className="planning-ambient" style={{ '--phase-color': currentPhase.color }} />
+
+      {/* Hero header with orbital icon */}
+      <div className="planning-hero">
+        <div className="planning-orbital-container">
+          <PhaseIcon size={28} className="planning-hero-icon" style={{ color: currentPhase.color }} />
+          <div className="planning-orbital-ring ring-1"><span className="orbital-dot" /></div>
+          <div className="planning-orbital-ring ring-2"><span className="orbital-dot" /></div>
+          <div className="planning-orbital-ring ring-3"><span className="orbital-dot" /><span className="orbital-dot opposite" /></div>
+          <div className="planning-hero-glow" style={{ background: currentPhase.color }} />
         </div>
-        <div className="planning-header-text">
-          <h3 className="planning-title">AI 正在分析规划</h3>
-          <p className="planning-subtitle">{currentPhase.desc}</p>
+        <div className="planning-hero-text">
+          <h3 className="planning-hero-title">AI 正在深度分析</h3>
+          <p className="planning-hero-phase" style={{ color: currentPhase.color }}>{currentPhase.desc}</p>
+          <p className="planning-hero-thought">{currentThought}</p>
         </div>
       </div>
 
-      {/* Phase stepper */}
-      <div className="planning-stepper">
+      {/* Phase timeline with animated progress */}
+      <div className="planning-timeline">
         {phaseOrder.slice(0, 3).map((p, i) => {
           const cfg = phaseConfig[p];
           const StepIcon = cfg.icon;
           const isActive = i === currentIdx;
           const isDone = i < currentIdx;
           return (
-            <div key={p} className={`planning-step${isActive ? ' active' : ''}${isDone ? ' done' : ''}`}>
-              <div className="planning-step-dot" style={{ '--step-color': cfg.color }}>
-                {isDone ? <CheckCircle2 size={12} /> : <StepIcon size={11} />}
+            <div key={p} className={`timeline-phase${isActive ? ' active' : ''}${isDone ? ' done' : ''}`}>
+              <div className="timeline-dot" style={{ '--dot-color': cfg.color }}>
+                {isDone ? <CheckCircle2 size={13} /> : <StepIcon size={12} />}
               </div>
-              <span className="planning-step-label">{cfg.label}</span>
-              {i < 2 && <div className={`planning-step-line${isDone ? ' filled' : ''}`} />}
+              <div className="timeline-info">
+                <span className="timeline-label">{cfg.label}</span>
+                {isActive && <span className="timeline-active-indicator">进行中</span>}
+              </div>
+              {i < 2 && (
+                <div className="timeline-connector">
+                  <div className={`timeline-connector-fill${isDone ? ' filled' : ''}`} style={{ '--fill-color': cfg.color }} />
+                </div>
+              )}
             </div>
           );
         })}
       </div>
 
-      {/* Discovered pages — appear progressively */}
+      {/* Discovered pages — staggered entrance */}
       {discoveredPages.length > 0 && (
-        <div className="planning-pages-section">
-          <div className="planning-pages-label">
-            <Layers size={13} />
+        <div className="planning-discovered">
+          <div className="planning-discovered-header">
+            <Layers size={14} />
             <span>已发现 {discoveredPages.length} 个页面</span>
+            <span className="planning-discovered-badge">{discoveredPages.length}</span>
           </div>
-          <div className="planning-pages-grid">
+          <div className="planning-discovered-list">
             {discoveredPages.map((page, i) => (
-              <div key={`${page.name}-${i}`} className="planning-page-card" style={{ animationDelay: `${i * 80}ms` }}>
-                <div className="planning-card-num">{i + 1}</div>
-                <div className="planning-card-info">
-                  <span className="planning-card-name">{page.name}</span>
+              <div key={`${page.name}-${i}`} className="discovered-card" style={{ animationDelay: `${i * 100}ms`, '--card-accent': phaseConfig[phase]?.color || '#3b82f6' }}>
+                <div className="discovered-card-index">{i + 1}</div>
+                <div className="discovered-card-body">
+                  <span className="discovered-card-name">{page.name}</span>
                   {page.description && (
-                    <span className="planning-card-desc">{page.description}</span>
-                  )}
-                  {page.route && (
-                    <span className="planning-card-route">{page.route}</span>
+                    <span className="discovered-card-desc">{page.description}</span>
                   )}
                 </div>
+                {page.route && (
+                  <span className="discovered-card-route">{page.route}</span>
+                )}
               </div>
             ))}
           </div>
         </div>
       )}
 
-      {/* Live stream text — formatted insights */}
+      {/* Live thinking stream — auto-visible */}
+      {readableLines.length > 0 && (
+        <div className="planning-live-stream">
+          <div className="planning-live-label">
+            <span className="live-dot" />
+            思考过程
+          </div>
+          <div className="planning-live-lines" ref={streamEndRef}>
+            {readableLines.map((line, i) => (
+              <div key={i} className={`planning-live-line${i === readableLines.length - 1 ? ' latest' : ''}`}>
+                <span className="live-line-marker">›</span>
+                {line}
+                {i === readableLines.length - 1 && <span className="typing-cursor">|</span>}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Collapsible raw detail for advanced users */}
       {streamText && (
-        <div className="planning-stream-section">
+        <div className="planning-raw-toggle-section">
           <button
             className="planning-stream-toggle"
             onClick={() => setShowRawDetail(v => !v)}
           >
             <Loader2 size={13} className="planning-stream-spin" />
-            <span>{showRawDetail ? '收起详细输出' : '查看分析过程'}</span>
+            <span>{showRawDetail ? '收起原始输出' : '查看原始数据流'}</span>
           </button>
           {showRawDetail && (
-            <div className="planning-stream-content" ref={streamEndRef}>
-              {readableLines.length > 0 ? (
-                readableLines.map((line, i) => (
-                  <div key={i} className="planning-stream-line">{line}</div>
-                ))
-              ) : (
-                <pre className="planning-stream-raw">{streamText.slice(-2000)}</pre>
-              )}
-            </div>
+            <pre className="planning-stream-raw">{streamText.slice(-3000)}</pre>
           )}
         </div>
       )}
 
-      {/* Calming footer hint */}
-      <div className="planning-footer">
-        <span className="planning-hint">规划过程通常需要 10-30 秒，取决于项目复杂度</span>
+      {/* Footer with elapsed time */}
+      <div className="planning-footer-enhanced">
+        <div className="planning-elapsed">
+          <span className="elapsed-dot" />
+          已用时 {elapsed}s
+        </div>
+        <span className="planning-hint-text">规划通常需要 10-30 秒，取决于项目复杂度</span>
       </div>
     </div>
   );

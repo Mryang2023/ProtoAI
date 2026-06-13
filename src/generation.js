@@ -115,6 +115,50 @@ export function buildStyleSpec(selectedStyles, styleDesc) {
 // ── Reference Template Extraction ───────────────────────
 
 /**
+ * 从 HTML 中提取完整的标签块（正确处理嵌套）
+ * 例如 extractTagBlock(html, 'nav') 会提取第一个 <nav>...</nav> 包括所有嵌套内容
+ */
+function extractTagBlock(html, tagName) {
+  const openRe = new RegExp(`<${tagName}(?:\\s[^>]*)?>|<${tagName}>`, 'gi');
+  const match = openRe.exec(html);
+  if (!match) return '';
+
+  const start = match.index;
+  let depth = 0;
+  let i = match.index;
+  const closeTag = `</${tagName}>`;
+  const openPattern = new RegExp(`<${tagName}[\\s>]`, 'gi');
+  const closePattern = new RegExp(closeTag, 'gi');
+
+  while (i < html.length) {
+    openPattern.lastIndex = i;
+    closePattern.lastIndex = i;
+    const nextOpen = openPattern.exec(html);
+    const nextClose = closePattern.exec(html);
+
+    if (!nextClose) break; // no more closing tags
+
+    if (nextOpen && nextOpen.index < nextClose.index) {
+      depth++;
+      i = nextOpen.index + 1;
+    } else {
+      depth--;
+      if (depth === 0) {
+        return html.slice(start, nextClose.index + closeTag.length);
+      }
+      i = nextClose.index + 1;
+    }
+  }
+
+  // Fallback: return from start to first closing tag
+  const fallbackClose = html.indexOf(closeTag, start);
+  if (fallbackClose !== -1) {
+    return html.slice(start, fallbackClose + closeTag.length);
+  }
+  return '';
+}
+
+/**
  * 从首页 HTML 中提取参考模板（导航栏 + 全局样式），用于后续页面的一致性约束
  * @param {string} html - 首页生成的完整 HTML
  * @returns {{ navHtml: string, styleCss: string, headerHtml: string }}
@@ -128,25 +172,38 @@ export function extractReferenceTemplate(html) {
     result.styleCss = styleMatch[1].trim();
   }
 
-  // 提取 <nav> 标签（导航栏）
-  const navMatch = html.match(/<nav[\s\S]*?<\/nav>/i);
-  if (navMatch) {
-    result.navHtml = navMatch[0];
-  }
+  // 提取 <nav> 标签（使用嵌套感知的提取）
+  result.navHtml = extractTagBlock(html, 'nav');
 
   // 提取 <header> 标签（有些页面用 header 而非 nav）
-  const headerMatch = html.match(/<header[\s\S]*?<\/header>/i);
-  if (headerMatch) {
-    result.headerHtml = headerMatch[0];
-  }
+  result.headerHtml = extractTagBlock(html, 'header');
 
   // 如果既没有 nav 也没有 header，尝试提取顶部导航区域
   if (!result.navHtml && !result.headerHtml) {
-    const topBarMatch = html.match(
-      /<div[^>]*class="[^"]*(?:nav|top-bar|header|navigation|navbar)[^"]*"[^>]*>[\s\S]*?<\/div>/i
+    const navDivMatch = html.match(
+      /<div[^>]*class="[^"]*(?:nav|top-bar|header|navigation|navbar)[^"]*"[^>]*>/i
     );
-    if (topBarMatch) {
-      result.navHtml = topBarMatch[0];
+    if (navDivMatch) {
+      // Use tag-counting to extract the full div block
+      const start = navDivMatch.index;
+      let depth = 0;
+      let i = start;
+      while (i < html.length) {
+        const nextOpen = html.indexOf('<div', i);
+        const nextClose = html.indexOf('</div>', i);
+        if (nextClose === -1) break;
+        if (nextOpen !== -1 && nextOpen < nextClose) {
+          depth++;
+          i = nextOpen + 4;
+        } else {
+          depth--;
+          if (depth === 0) {
+            result.navHtml = html.slice(start, nextClose + 6);
+            break;
+          }
+          i = nextClose + 6;
+        }
+      }
     }
   }
 
@@ -459,7 +516,16 @@ export async function generateProjectPages(provider, config, plannedPages, style
         if (err.name === 'AbortError' || signal?.aborted) throw new DOMException('Aborted', 'AbortError');
         lastError = err;
         if (attempt < MAX_RETRIES) {
-          await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
+          // Abortable delay: resolve on timeout, reject on abort
+          await new Promise((resolve, reject) => {
+            const timer = setTimeout(resolve, 1000 * (attempt + 1));
+            if (signal) {
+              signal.addEventListener('abort', () => {
+                clearTimeout(timer);
+                reject(new DOMException('Aborted', 'AbortError'));
+              }, { once: true });
+            }
+          });
         }
       }
     }
@@ -491,7 +557,7 @@ export async function generateProjectPages(provider, config, plannedPages, style
     } else {
       results[0] = { ...plannedPages[0], html: '', error: err.message };
       completed.add(0);
-      onProgress?.(`已完成 ${completed.size}/${plannedPages.length} 页`);
+      onProgress?.(`首页生成失败，后续页面将无参考模板约束`);
       onPageGenerated?.(results[0], 0, plannedPages.length);
     }
   }
@@ -540,6 +606,18 @@ export async function regenerateSinglePage(provider, config, page, styleSpec, co
 
 // ── Refine Page ─────────────────────────────────────────
 
+/**
+ * 智能截断 HTML，在标签边界处切割，避免切断标签属性
+ */
+function truncateHtmlAtBoundary(html, maxLen) {
+  if (html.length <= maxLen) return html;
+  const cutPoint = html.lastIndexOf('>', maxLen);
+  if (cutPoint > maxLen * 0.8) {
+    return html.slice(0, cutPoint + 1) + '\n<!-- 内容过长已截断 -->';
+  }
+  return html.slice(0, maxLen) + '\n<!-- 内容过长已截断 -->';
+}
+
 export async function refinePage(provider, config, currentHtml, userInstruction) {
   if (!config?.apiKey) throw new Error('请先在设置中配置 AI 模型的 API Key');
 
@@ -551,7 +629,7 @@ export async function refinePage(provider, config, currentHtml, userInstruction)
 3. 只输出 HTML 代码，不要输出任何解释性文字
 4. 不要用 markdown 代码块包裹，直接输出 HTML`;
 
-  const userPrompt = `## 当前页面 HTML\n\n\`\`\`html\n${currentHtml.slice(0, 12000)}\n\`\`\`\n\n## 修改指令\n\n${userInstruction}\n\n请按照修改指令调整 HTML，返回完整的修改后 HTML 代码。`;
+  const userPrompt = `## 当前页面 HTML\n\n\`\`\`html\n${truncateHtmlAtBoundary(currentHtml, 12000)}\n\`\`\`\n\n## 修改指令\n\n${userInstruction}\n\n请按照修改指令调整 HTML，返回完整的修改后 HTML 代码。`;
 
   const rawResponse = await callAI(provider, config, systemPrompt, userPrompt);
   return extractHtml(rawResponse.content);
@@ -572,7 +650,7 @@ export async function refinePageStream(provider, config, currentHtml, userInstru
 3. 只输出 HTML 代码，不要输出任何解释性文字
 4. 不要用 markdown 代码块包裹，直接输出 HTML`;
 
-  const userPrompt = `## 当前页面 HTML\n\n\`\`\`html\n${currentHtml.slice(0, 12000)}\n\`\`\`\n\n## 修改指令\n\n${userInstruction}\n\n请按照修改指令调整 HTML，返回完整的修改后 HTML 代码。`;
+  const userPrompt = `## 当前页面 HTML\n\n\`\`\`html\n${truncateHtmlAtBoundary(currentHtml, 12000)}\n\`\`\`\n\n## 修改指令\n\n${userInstruction}\n\n请按照修改指令调整 HTML，返回完整的修改后 HTML 代码。`;
 
   const rawResponse = await callAIStream(provider, config, systemPrompt, userPrompt, (fullText) => {
     const html = extractHtml(fullText);
@@ -598,7 +676,7 @@ export async function refineRegion(provider, config, currentHtml, regionHtml, us
 3. 只输出 HTML 代码，不要输出任何解释性文字
 4. 不要用 markdown 代码块包裹，直接输出 HTML`;
 
-  const userPrompt = `## 当前完整页面 HTML\n\n\`\`\`html\n${currentHtml.slice(0, 12000)}\n\`\`\`\n\n## 选中区域（仅修改此部分）\n\n\`\`\`html\n${regionHtml}\n\`\`\`\n\n## 修改指令\n\n${userInstruction}\n\n请修改选中区域，然后将修改后的区域替换回完整 HTML 中。返回完整 HTML。`;
+  const userPrompt = `## 当前完整页面 HTML\n\n\`\`\`html\n${truncateHtmlAtBoundary(currentHtml, 12000)}\n\`\`\`\n\n## 选中区域（仅修改此部分）\n\n\`\`\`html\n${regionHtml}\n\`\`\`\n\n## 修改指令\n\n${userInstruction}\n\n请修改选中区域，然后将修改后的区域替换回完整 HTML 中。返回完整 HTML。`;
 
   const rawResponse = await callAI(provider, config, systemPrompt, userPrompt);
   return extractHtml(rawResponse.content);

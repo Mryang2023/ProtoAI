@@ -20,7 +20,9 @@ export default function useCodeRefine({
     const idx = typeof pageIndex === 'number' ? pageIndex : currentPageIndex;
     const page = pages[idx];
     if (!page?.html) return;
-    undoStackRef.current.push({ pageIndex: idx, html: page.html, code });
+    // Store the target page's HTML as "code" — not the current editor's code
+    const pageCode = idx === currentPageIndex ? code : page.html;
+    undoStackRef.current.push({ pageIndex: idx, html: page.html, code: pageCode });
     if (undoStackRef.current.length > 50) undoStackRef.current.shift();
     redoStackRef.current = [];
     setCanUndo(true);
@@ -32,7 +34,9 @@ export default function useCodeRefine({
     if (!snapshot) return;
     const currentPage = pages[snapshot.pageIndex];
     if (currentPage?.html) {
-      redoStackRef.current.push({ pageIndex: snapshot.pageIndex, html: currentPage.html, code });
+      // Store the page's current html as redo "code" (not the editor's code)
+      const redoCode = snapshot.pageIndex === currentPageIndex ? code : currentPage.html;
+      redoStackRef.current.push({ pageIndex: snapshot.pageIndex, html: currentPage.html, code: redoCode });
     }
     setPages((prev) => {
       const next = [...prev];
@@ -53,7 +57,9 @@ export default function useCodeRefine({
     if (!snapshot) return;
     const currentPage = pages[snapshot.pageIndex];
     if (currentPage?.html) {
-      undoStackRef.current.push({ pageIndex: snapshot.pageIndex, html: currentPage.html, code });
+      // Store the page's current html as undo "code" (not the editor's code)
+      const undoCode = snapshot.pageIndex === currentPageIndex ? code : currentPage.html;
+      undoStackRef.current.push({ pageIndex: snapshot.pageIndex, html: currentPage.html, code: undoCode });
     }
     setPages((prev) => {
       const next = [...prev];

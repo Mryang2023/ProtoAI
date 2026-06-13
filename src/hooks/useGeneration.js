@@ -266,7 +266,7 @@ export default function useGeneration({
             setProgressCurrent(completedCount);
             setPages((prev) => {
               const next = [...prev];
-              next[index] = pageResult;
+              next[totalPc + index] = pageResult; // offset to avoid overwriting PC pages
               return next;
             });
           },
@@ -553,6 +553,9 @@ export default function useGeneration({
   // ── Reset generation state (used during project switch) ──
 
   const resetGenerationState = useCallback(() => {
+    // Abort any ongoing generation before resetting
+    abortControllerRef.current?.abort();
+    abortControllerRef.current = null;
     setCurrentPageIndex(0);
     setMessages([]);
     setPlannedPages(null);

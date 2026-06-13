@@ -37,7 +37,7 @@ const LINK_INTERCEPTOR_SCRIPT = `<script>
 
 function injectLinkInterceptor(html) {
   if (!html || typeof html !== 'string') return html;
-  if (html.includes('protoai-nav')) return html; // already injected
+  if (html.includes("type:'protoai-nav'")) return html; // already injected
   // Insert before </body> or at the end
   if (html.includes('</body>')) {
     return html.replace('</body>', LINK_INTERCEPTOR_SCRIPT + '\n</body>');
@@ -90,19 +90,6 @@ export default function RightPanel({
     return () => window.removeEventListener('message', handleMessage);
   }, [pages, plannedPages, onPageChange]);
 
-  // Notify iframe of current page (for nav highlighting)
-  useEffect(() => {
-    const iframe = iframeRef.current;
-    if (iframe?.contentWindow && pages[currentPageIndex]) {
-      const href = pageFileName(pages[currentPageIndex], currentPageIndex);
-      // Delay to let the iframe finish loading
-      const timer = setTimeout(() => {
-        iframe.contentWindow?.postMessage({ type: 'protoai-current-page', href }, '*');
-      }, 300);
-      return () => clearTimeout(timer);
-    }
-  }, [currentPageIndex, pages, previewHtml]);
-
   // Reset local preview when generation finishes
   useEffect(() => {
     if (!isGenerating) setUserPreviewIndex(null);
@@ -134,6 +121,18 @@ export default function RightPanel({
   const previewHtml = rawPreviewHtml && !streamingHtml
     ? injectLinkInterceptor(rawPreviewHtml)
     : rawPreviewHtml;
+
+  // Notify iframe of current page (for nav highlighting) — must be after previewHtml declaration
+  useEffect(() => {
+    const iframe = iframeRef.current;
+    if (iframe?.contentWindow && pages[currentPageIndex]) {
+      const href = pageFileName(pages[currentPageIndex], currentPageIndex);
+      const timer = setTimeout(() => {
+        iframe.contentWindow?.postMessage({ type: 'protoai-current-page', href }, '*');
+      }, 300);
+      return () => clearTimeout(timer);
+    }
+  }, [currentPageIndex, pages, previewHtml]);
 
   // Current wireframe HTML for plan mode
   const currentWireframeHtml = rightViewMode === 'plan' && wireframeHtmls.length > 0

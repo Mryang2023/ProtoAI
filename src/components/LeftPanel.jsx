@@ -40,6 +40,7 @@ export default function LeftPanel({
   isPreAnalyzing,
   awaitingPageConfirm,
   onConfirmPageCount,
+  onSkipPageCount,
   isDualPlatform,
   activePlanPlatform,
   onSwitchPlanPlatform,
@@ -535,6 +536,15 @@ export default function LeftPanel({
             >
               <Check size={14} />
               确认，开始规划（{displayEstimate.min}–{displayEstimate.max} 页）
+            </button>
+
+            {/* Skip button */}
+            <button
+              className="btn btn-ghost btn-sm page-count-skip-btn"
+              onClick={onSkipPageCount}
+              disabled={isGenerating}
+            >
+              跳过，让 AI 自行决定页面数量
             </button>
           </div>
         )}

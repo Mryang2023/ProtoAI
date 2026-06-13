@@ -356,6 +356,7 @@ export default function App() {
           isPreAnalyzing={generation.isPreAnalyzing}
           awaitingPageConfirm={generation.awaitingPageConfirm}
           onConfirmPageCount={generation.handleConfirmPageCount}
+          onSkipPageCount={generation.handleSkipPageCount}
           isDualPlatform={!!generation.pcPages && !!generation.mobilePages}
           activePlanPlatform={generation.activePlanPlatform}
           onSwitchPlanPlatform={generation.handleSwitchPlanPlatform}

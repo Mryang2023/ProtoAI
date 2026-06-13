@@ -232,6 +232,15 @@ export default function useGeneration({
     doFullPlanning();
   }, [doFullPlanning]);
 
+  // Skip page count prediction — let AI decide freely
+  const handleSkipPageCount = useCallback(() => {
+    setPageCountRange(null);
+    pageCountRangeRef.current = null;
+    setPageEstimate(null);
+    setAwaitingPageConfirm(false);
+    doFullPlanning();
+  }, [doFullPlanning]);
+
   // ── Switch platform tabs in dual mode ──
 
   const handleSwitchPlanPlatform = useCallback((platform) => {
@@ -839,7 +848,7 @@ export default function useGeneration({
     // Refs
     userSelectedPageRef, abortControllerRef,
     // Actions
-    handlePlan, handleConfirmPageCount, handleConfirmPlan, handleCancelPlan,
+    handlePlan, handleConfirmPageCount, handleSkipPageCount, handleConfirmPlan, handleCancelPlan,
     handleCancelGeneration, handleSwitchPlanPlatform,
     handleViewPlan, handleViewPagePrototype,
     handleLoadPlanWithWireframe, handleLoadScheme, handleSaveScheme,

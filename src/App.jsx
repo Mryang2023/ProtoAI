@@ -408,6 +408,7 @@ export default function App() {
               messages={codeRefine.messages}
               onSendMessage={codeRefine.handleSendMessage}
               onRefineRegion={codeRefine.handleRefineRegion}
+              isRefining={codeRefine.isRefining}
             />
           }
         />

@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef } from 'react';
-import { refinePage, refineRegion } from '../aiService.js';
+import { refinePageStream, refineRegion } from '../aiService.js';
 
 export default function useCodeRefine({
   aiConfig, activeProvider,
@@ -90,7 +90,10 @@ export default function useCodeRefine({
 
     try {
       const providerConfig = aiConfig[activeProvider] || {};
-      const refinedHtml = await refinePage(activeProvider, providerConfig, generatedHtml, text);
+      const refinedHtml = await refinePageStream(
+        activeProvider, providerConfig, generatedHtml, text,
+        () => {} // collect streamed HTML but don't update preview during streaming (would flicker)
+      );
       setPages((prev) => {
         const next = [...prev];
         if (next[currentPageIndex]) {

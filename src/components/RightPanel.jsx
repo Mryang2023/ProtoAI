@@ -5,6 +5,45 @@ import {
   Sparkles, AlertCircle, ChevronDown, CheckCircle2, ArrowLeft, RotateCcw,
   Layers, Eye, Brain, FileText, Route, Loader2, XCircle,
 } from 'lucide-react';
+import { pageFileName } from '../aiService.js';
+
+// ── iframe Link Interceptor ─────────────────────────────
+// Injects a script into srcDoc that intercepts <a> clicks and
+// posts a message to the parent window for cross-page navigation.
+
+const LINK_INTERCEPTOR_SCRIPT = `<script>
+(function(){
+  document.addEventListener('click',function(e){
+    var t=e.target.closest('a');
+    if(!t)return;
+    var h=t.getAttribute('href');
+    if(!h||h.startsWith('http')||h.startsWith('//')||h.startsWith('javascript:')||h==='#')return;
+    e.preventDefault();e.stopPropagation();
+    var f=h.split('#')[0].split('?')[0];
+    window.parent.postMessage({type:'protoai-nav',href:f},'*');
+  },true);
+  window.addEventListener('message',function(e){
+    if(e.data&&e.data.type==='protoai-current-page'){
+      var c=e.data.href;
+      document.querySelectorAll('a').forEach(function(a){
+        var h=(a.getAttribute('href')||'').split('#')[0].split('?')[0];
+        if(h===c){a.classList.add('nav-active','current-page','active')}
+        else{a.classList.remove('nav-active','current-page','active')}
+      });
+    }
+  });
+})();
+<\/script>`;
+
+function injectLinkInterceptor(html) {
+  if (!html || typeof html !== 'string') return html;
+  if (html.includes('protoai-nav')) return html; // already injected
+  // Insert before </body> or at the end
+  if (html.includes('</body>')) {
+    return html.replace('</body>', LINK_INTERCEPTOR_SCRIPT + '\n</body>');
+  }
+  return html + LINK_INTERCEPTOR_SCRIPT;
+}
 
 export default function RightPanel({
   generatedHtml, isGenerating, onRefresh, detectedPlatform,
@@ -27,8 +66,42 @@ export default function RightPanel({
   const [userPreviewIndex, setUserPreviewIndex] = useState(null);
   const [planPageIndex, setPlanPageIndex] = useState(0);
   const exportRef = useRef(null);
+  const iframeRef = useRef(null);
 
   const hasMultiplePages = pages.filter((p) => p?.html).length > 1;
+
+  // ── iframe cross-page navigation ──
+  // Listen for navigation messages from the iframe
+  useEffect(() => {
+    function handleMessage(e) {
+      if (e.data?.type === 'protoai-nav') {
+        const targetHref = e.data.href;
+        const list = plannedPages || pages;
+        const idx = list.findIndex((p, i) => {
+          if (!p) return false;
+          return pageFileName(p, i) === targetHref;
+        });
+        if (idx >= 0 && pages[idx]?.html) {
+          onPageChange(idx);
+        }
+      }
+    }
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
+  }, [pages, plannedPages, onPageChange]);
+
+  // Notify iframe of current page (for nav highlighting)
+  useEffect(() => {
+    const iframe = iframeRef.current;
+    if (iframe?.contentWindow && pages[currentPageIndex]) {
+      const href = pageFileName(pages[currentPageIndex], currentPageIndex);
+      // Delay to let the iframe finish loading
+      const timer = setTimeout(() => {
+        iframe.contentWindow?.postMessage({ type: 'protoai-current-page', href }, '*');
+      }, 300);
+      return () => clearTimeout(timer);
+    }
+  }, [currentPageIndex, pages, previewHtml]);
 
   // Reset local preview when generation finishes
   useEffect(() => {
@@ -51,11 +124,16 @@ export default function RightPanel({
 
   // Determine which HTML to show in the preview
   // During generation: user-selected page > streaming partial > empty (progress cards)
-  const previewHtml = isGenerating
+  const rawPreviewHtml = isGenerating
     ? (userPreviewIndex !== null
         ? (pages[userPreviewIndex]?.html || '')
         : (streamingHtml || ''))
     : (rightViewMode === 'prototype' ? generatedHtml : '');
+
+  // Inject link interceptor for cross-page navigation (only when not streaming)
+  const previewHtml = rawPreviewHtml && !streamingHtml
+    ? injectLinkInterceptor(rawPreviewHtml)
+    : rawPreviewHtml;
 
   // Current wireframe HTML for plan mode
   const currentWireframeHtml = rightViewMode === 'plan' && wireframeHtmls.length > 0
@@ -312,7 +390,7 @@ export default function RightPanel({
             ) : previewHtml ? (
               <div className={`preview-frame ${device}`}
                 style={{ transform: `scale(${zoom / 100})`, transformOrigin: 'center center' }}>
-                <iframe title="原型预览" srcDoc={previewHtml}
+                <iframe ref={iframeRef} title="原型预览" srcDoc={previewHtml}
                   sandbox="allow-scripts allow-same-origin" aria-label="HTML原型预览区域" />
               </div>
             ) : (

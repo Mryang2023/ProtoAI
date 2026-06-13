@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, lazy, Suspense } from 'react';
-import { MessageSquare, Code2, Send, Bot, User, Scissors } from 'lucide-react';
+import { MessageSquare, Code2, Send, Bot, User, Scissors, Loader2 } from 'lucide-react';
 
 const MonacoEditor = lazy(() => import('@monaco-editor/react'));
 
@@ -9,6 +9,7 @@ export default function RefinePanel({
   messages,
   onSendMessage,
   onRefineRegion,
+  isRefining = false,
 }) {
   const [activeTab, setActiveTab] = useState('chat');
   const [input, setInput] = useState('');
@@ -94,6 +95,17 @@ export default function RefinePanel({
                 <div className="chat-bubble">{msg.content}</div>
               </div>
             ))}
+            {isRefining && (
+              <div className="chat-message ai">
+                <div className="chat-avatar ai">
+                  <Bot size={14} />
+                </div>
+                <div className="chat-bubble" style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--fg-muted, #888)' }}>
+                  <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} />
+                  <span>正在修改原型...</span>
+                </div>
+              </div>
+            )}
             <div ref={chatEndRef} />
           </div>
           <div className="chat-input-area">
@@ -108,7 +120,7 @@ export default function RefinePanel({
             <button
               className="btn btn-primary btn-sm"
               onClick={handleSend}
-              disabled={!input.trim()}
+              disabled={!input.trim() || isRefining}
               aria-label="发送微调指令"
             >
               <Send size={14} />

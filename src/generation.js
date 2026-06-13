@@ -112,6 +112,90 @@ export function buildStyleSpec(selectedStyles, styleDesc) {
   return result;
 }
 
+// ── Reference Template Extraction ───────────────────────
+
+/**
+ * 从首页 HTML 中提取参考模板（导航栏 + 全局样式），用于后续页面的一致性约束
+ * @param {string} html - 首页生成的完整 HTML
+ * @returns {{ navHtml: string, styleCss: string, headerHtml: string }}
+ */
+export function extractReferenceTemplate(html) {
+  const result = { navHtml: '', styleCss: '', headerHtml: '' };
+
+  // 提取 <style> 块内容（取第一个 style 标签，通常是全局样式）
+  const styleMatch = html.match(/<style[^>]*>([\s\S]*?)<\/style>/i);
+  if (styleMatch) {
+    result.styleCss = styleMatch[1].trim();
+  }
+
+  // 提取 <nav> 标签（导航栏）
+  const navMatch = html.match(/<nav[\s\S]*?<\/nav>/i);
+  if (navMatch) {
+    result.navHtml = navMatch[0];
+  }
+
+  // 提取 <header> 标签（有些页面用 header 而非 nav）
+  const headerMatch = html.match(/<header[\s\S]*?<\/header>/i);
+  if (headerMatch) {
+    result.headerHtml = headerMatch[0];
+  }
+
+  // 如果既没有 nav 也没有 header，尝试提取顶部导航区域
+  if (!result.navHtml && !result.headerHtml) {
+    const topBarMatch = html.match(
+      /<div[^>]*class="[^"]*(?:nav|top-bar|header|navigation|navbar)[^"]*"[^>]*>[\s\S]*?<\/div>/i
+    );
+    if (topBarMatch) {
+      result.navHtml = topBarMatch[0];
+    }
+  }
+
+  return result;
+}
+
+/**
+ * 构建参考模板约束文本，注入到后续页面的 prompt 中
+ */
+export function buildReferenceConstraint(refTemplate) {
+  if (!refTemplate) return '';
+
+  const navSnippet = refTemplate.navHtml || refTemplate.headerHtml;
+  if (!navSnippet && !refTemplate.styleCss) return '';
+
+  const parts = [];
+  parts.push('\n\n## ⚠️ 跨页面一致性约束（必须严格遵守）\n');
+  parts.push('以下是该项目已生成页面的导航栏和全局样式参考，你的导航栏结构、样式类名、配色方案必须与参考**完全一致**。\n');
+
+  if (navSnippet) {
+    parts.push('### 参考导航栏 HTML：');
+    parts.push('```html');
+    parts.push(navSnippet);
+    parts.push('```\n');
+  }
+
+  if (refTemplate.styleCss) {
+    // 只取前 100 行样式，避免 prompt 过长
+    const cssLines = refTemplate.styleCss.split('\n');
+    const truncatedCss = cssLines.slice(0, 100).join('\n');
+    const wasTruncated = cssLines.length > 100;
+
+    parts.push('### 参考全局样式（CSS）：');
+    parts.push('```css');
+    parts.push(truncatedCss);
+    if (wasTruncated) parts.push('/* ... 后续样式省略，但配色和布局变量必须保持一致 */');
+    parts.push('```\n');
+  }
+
+  parts.push('### 具体要求：');
+  parts.push('1. 导航栏的 HTML 结构、类名、颜色必须与参考模板完全相同');
+  parts.push('2. 导航栏中的项目标题文字必须与参考模板一致（不要改名）');
+  parts.push('3. CSS 变量（:root 或顶层变量）中的配色方案必须复用');
+  parts.push('4. 你可以为当前页面添加新的样式，但不能修改导航栏和全局配色');
+  parts.push('5. 如果参考模板中有页面列表链接，保留相同的链接结构，用 class 标记当前页');
+
+  return parts.join('\n');
+}
+
 // ── HTML Utilities ──────────────────────────────────────
 
 export function extractHtml(text) {
@@ -224,9 +308,9 @@ export function buildContextPrompt(contentDesc, fileContents, selectedStyles, st
 
 // ── Page Generation ─────────────────────────────────────
 
-function buildPageSystemPrompt(platform) {
+function buildPageSystemPrompt(platform, hasReference) {
   const platSpec = PLATFORM_SPECS[platform] || PLATFORM_SPECS.pc;
-  return `你是一个专业的 HTML/CSS 原型生成器。用户会给你单个页面的需求描述和全局设计规范，你需要生成一个完整、可直接运行的单页 HTML 文件。
+  let prompt = `你是一个专业的 HTML/CSS 原型生成器。用户会给你单个页面的需求描述和全局设计规范，你需要生成一个完整、可直接运行的单页 HTML 文件。
 
 目标平台：${platform === 'mobile' ? '移动端（手机APP/小程序）' : 'PC端（桌面网页）'}
 
@@ -248,10 +332,19 @@ function buildPageSystemPrompt(platform) {
 8. 必须严格遵守全局设计规范中的配色、字体和组件样式
 9. ${platform === 'mobile' ? '页面内容区域顶部放置简洁的文字链接导航，底部放置固定导航栏（tab bar）' : '页面内容区域上方放置水平导航栏'}
 10. 所有导航链接必须使用 <a href="文件名.html"> 格式，文件名必须与下方页面列表中的文件名完全一致
-11. 页面中所有可点击的按钮、链接，如果对应其他页面的功能，都必须使用 <a> 标签并链接到对应的页面文件`;
+11. 页面中所有可点击的按钮、链接，如果对应其他页面的功能，都必须使用 <a> 标签并链接到对应的页面文件
+12. 所有图片必须使用占位图服务：使用 https://placehold.co/宽x高/背景色/文字色?text=描述 格式生成占位图。例如 https://placehold.co/400x300/e2e8f0/64748b?text=Product+Image 。头像使用圆形占位图，Banner 使用宽幅占位图。不要留空白或使用 broken image
+13. 所有可交互元素必须有完整的状态样式：按钮和链接需要包含 :hover（鼠标悬停变色/阴影）、:active（按下反馈）、:focus-visible（键盘焦点环）、:disabled（禁用灰化）状态。卡片元素需要 hover 阴影提升效果
+14. 使用 CSS 自定义属性（变量）管理配色和间距，使用 clamp() 函数实现响应式字体大小（例如 font-size: clamp(14px, 2vw, 18px)），确保在不同视口下平滑过渡`;
+
+  if (hasReference) {
+    prompt += `\n15. 【最高优先级】如果用户提供了"参考模板"或"跨页面一致性约束"，你的导航栏 HTML 结构、CSS 类名、配色变量必须与参考模板完全一致，不允许做任何修改或重新设计。`;
+  }
+
+  return prompt;
 }
 
-function buildPageUserPrompt(page, allPages, fileContents, contentDesc, styleSpec, platform) {
+function buildPageUserPrompt(page, allPages, fileContents, contentDesc, styleSpec, platform, referenceConstraint) {
   let userPrompt = '';
   userPrompt += `## 当前页面信息\n`;
   userPrompt += `- 页面名称：${page.name}\n`;
@@ -271,6 +364,11 @@ function buildPageUserPrompt(page, allPages, fileContents, contentDesc, styleSpe
     userPrompt += `所有按钮、链接、导航元素都应使用 <a> 标签并设置正确的 href 属性来实现页面跳转。\n\n`;
   }
 
+  // 注入参考模板约束（仅对非首页生效）
+  if (referenceConstraint) {
+    userPrompt += referenceConstraint + '\n\n';
+  }
+
   if (fileContents.length > 0) {
     userPrompt += '## 上传的需求文件内容\n\n';
     fileContents.forEach(({ name, content }) => {
@@ -286,14 +384,18 @@ function buildPageUserPrompt(page, allPages, fileContents, contentDesc, styleSpe
   userPrompt += `请根据以上信息，为「${page.name}」页面生成完整的单页 HTML 原型。`;
   userPrompt += '该页面应严格遵循规划中的功能描述和全局设计规范。';
   userPrompt += `页面必须符合${platform === 'mobile' ? '移动端' : 'PC端'}的布局规范。`;
+  if (referenceConstraint) {
+    userPrompt += '导航栏和全局样式必须严格复用参考模板，保持一致性。';
+  }
   userPrompt += '所有页面间的跳转链接必须使用正确的文件名。';
   userPrompt += '只输出 HTML 代码，不要输出任何解释性文字。';
   return userPrompt;
 }
 
-export async function generateSinglePage(provider, config, page, styleSpec, contentDesc, fileContents, selectedStyles, styleDesc, allPages, platform = 'pc', signal) {
-  const systemPrompt = buildPageSystemPrompt(platform);
-  const userPrompt = buildPageUserPrompt(page, allPages, fileContents, contentDesc, styleSpec, platform);
+export async function generateSinglePage(provider, config, page, styleSpec, contentDesc, fileContents, selectedStyles, styleDesc, allPages, platform = 'pc', signal, referenceConstraint = '') {
+  const hasReference = !!referenceConstraint;
+  const systemPrompt = buildPageSystemPrompt(platform, hasReference);
+  const userPrompt = buildPageUserPrompt(page, allPages, fileContents, contentDesc, styleSpec, platform, referenceConstraint);
   const rawResponse = await callAI(provider, config, systemPrompt, userPrompt, signal);
   return { html: extractHtml(rawResponse.content), finishReason: rawResponse.finishReason };
 }
@@ -302,9 +404,10 @@ export async function generateSinglePage(provider, config, page, styleSpec, cont
  * Streaming version of generateSinglePage.
  * Calls `onChunk(htmlString)` with progressively accumulated (and repaired) HTML.
  */
-export async function generateSinglePageStream(provider, config, page, styleSpec, contentDesc, fileContents, selectedStyles, styleDesc, allPages, platform = 'pc', onChunk, signal) {
-  const systemPrompt = buildPageSystemPrompt(platform);
-  const userPrompt = buildPageUserPrompt(page, allPages, fileContents, contentDesc, styleSpec, platform);
+export async function generateSinglePageStream(provider, config, page, styleSpec, contentDesc, fileContents, selectedStyles, styleDesc, allPages, platform = 'pc', onChunk, signal, referenceConstraint = '') {
+  const hasReference = !!referenceConstraint;
+  const systemPrompt = buildPageSystemPrompt(platform, hasReference);
+  const userPrompt = buildPageUserPrompt(page, allPages, fileContents, contentDesc, styleSpec, platform, referenceConstraint);
 
   const rawResponse = await callAIStream(provider, config, systemPrompt, userPrompt, (fullText) => {
     const html = extractHtml(fullText);
@@ -326,9 +429,9 @@ export async function generateProjectPages(provider, config, plannedPages, style
   const results = new Array(plannedPages.length);
   const completed = new Set();
 
-  onProgress?.(`正在生成 ${plannedPages.length} 个页面...`);
+  onProgress?.(`正在生成 ${plannedPages.length} 个页面（首页优先生成以提取参考模板）...`);
 
-  async function generateWithRetry(page, index, shouldStream) {
+  async function generateWithRetry(page, index, shouldStream, referenceConstraint) {
     let lastError = null;
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
       if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
@@ -338,13 +441,14 @@ export async function generateProjectPages(provider, config, plannedPages, style
           const result = await generateSinglePageStream(
             provider, config, page, styleSpec, contentDesc,
             fileContents, selectedStyles, styleDesc, plannedPages, platform,
-            (html) => onStream(html, index), signal
+            (html) => onStream(html, index), signal, referenceConstraint
           );
           return result.html;
         }
         const result = await generateSinglePage(
           provider, config, page, styleSpec, contentDesc,
-          fileContents, selectedStyles, styleDesc, plannedPages, platform, signal
+          fileContents, selectedStyles, styleDesc, plannedPages, platform, signal,
+          referenceConstraint
         );
         if (result.finishReason === 'length' && attempt < MAX_RETRIES) {
           console.warn(`Page "${page.name}" truncated (attempt ${attempt + 1}), retrying...`);
@@ -362,44 +466,76 @@ export async function generateProjectPages(provider, config, plannedPages, style
     throw lastError || new Error('生成失败');
   }
 
-  // First page gets streaming preview; others use regular generation
-  const streamPageIndex = 0;
+  // ── Phase 1: Generate the first page (reference page) with streaming ──
+  let referenceConstraint = '';
+  try {
+    const firstPageHtml = await generateWithRetry(plannedPages[0], 0, true, '');
+    const firstResult = { ...plannedPages[0], html: firstPageHtml };
+    results[0] = firstResult;
+    completed.add(0);
+    onProgress?.(`已完成 ${completed.size}/${plannedPages.length} 页（参考模板提取中）`);
+    onPageGenerated?.(firstResult, 0, plannedPages.length);
 
-  const promises = plannedPages.map(async (page, i) => {
-    if (signal?.aborted) return;
-    if (i > 0 && i % MAX_CONCURRENT === 0) {
-      await new Promise((r) => setTimeout(r, STAGGER_DELAY_MS));
-      if (signal?.aborted) return;
-    }
-    try {
-      const html = await generateWithRetry(page, i, i === streamPageIndex);
-      const result = { ...page, html };
-      results[i] = result;
-      completed.add(i);
-      onProgress?.(`已完成 ${completed.size}/${plannedPages.length} 页`);
-      onPageGenerated?.(result, i, plannedPages.length);
-    } catch (err) {
-      if (err.name === 'AbortError') {
-        results[i] = { ...page, html: '', error: '已取消' };
-        completed.add(i);
-        return;
+    // Extract reference template from the first page
+    if (plannedPages.length > 1) {
+      const refTemplate = extractReferenceTemplate(firstPageHtml);
+      referenceConstraint = buildReferenceConstraint(refTemplate);
+      if (referenceConstraint) {
+        console.log('[ProtoAI] 参考模板已提取，将注入后续页面 prompt');
       }
-      const result = { ...page, html: '', error: err.message };
-      results[i] = result;
-      completed.add(i);
-      onProgress?.(`已完成 ${completed.size}/${plannedPages.length} 页`);
-      onPageGenerated?.(result, i, plannedPages.length);
     }
-  });
+  } catch (err) {
+    if (err.name === 'AbortError') {
+      results[0] = { ...plannedPages[0], html: '', error: '已取消' };
+      completed.add(0);
+    } else {
+      results[0] = { ...plannedPages[0], html: '', error: err.message };
+      completed.add(0);
+      onProgress?.(`已完成 ${completed.size}/${plannedPages.length} 页`);
+      onPageGenerated?.(results[0], 0, plannedPages.length);
+    }
+  }
 
-  await Promise.allSettled(promises);
+  // ── Phase 2: Generate remaining pages concurrently (with reference constraint) ──
+  if (plannedPages.length > 1) {
+    const remainingPromises = plannedPages.slice(1).map(async (page, i) => {
+      const pageIndex = i + 1;
+      if (signal?.aborted) return;
+      if (i > 0 && i % MAX_CONCURRENT === 0) {
+        await new Promise((r) => setTimeout(r, STAGGER_DELAY_MS));
+        if (signal?.aborted) return;
+      }
+      try {
+        const html = await generateWithRetry(page, pageIndex, false, referenceConstraint);
+        const result = { ...page, html };
+        results[pageIndex] = result;
+        completed.add(pageIndex);
+        onProgress?.(`已完成 ${completed.size}/${plannedPages.length} 页`);
+        onPageGenerated?.(result, pageIndex, plannedPages.length);
+      } catch (err) {
+        if (err.name === 'AbortError') {
+          results[pageIndex] = { ...page, html: '', error: '已取消' };
+          completed.add(pageIndex);
+          return;
+        }
+        const result = { ...page, html: '', error: err.message };
+        results[pageIndex] = result;
+        completed.add(pageIndex);
+        onProgress?.(`已完成 ${completed.size}/${plannedPages.length} 页`);
+        onPageGenerated?.(result, pageIndex, plannedPages.length);
+      }
+    });
+
+    await Promise.allSettled(remainingPromises);
+  }
+
   // Return raw pages without injected navigation.
   // ProtoAI's own UI handles page switching; nav is only injected at export time.
   return { pages: results };
 }
 
-export async function regenerateSinglePage(provider, config, page, styleSpec, contentDesc, fileContents, selectedStyles, styleDesc, allPages, platform = 'pc') {
-  return generateSinglePage(provider, config, page, styleSpec, contentDesc, fileContents, selectedStyles, styleDesc, allPages, platform);
+export async function regenerateSinglePage(provider, config, page, styleSpec, contentDesc, fileContents, selectedStyles, styleDesc, allPages, platform = 'pc', referenceConstraint = '') {
+  return generateSinglePage(provider, config, page, styleSpec, contentDesc, fileContents, selectedStyles, styleDesc, allPages, platform, undefined, referenceConstraint);
 }
 
 // ── Refine Page ─────────────────────────────────────────
@@ -418,6 +554,31 @@ export async function refinePage(provider, config, currentHtml, userInstruction)
   const userPrompt = `## 当前页面 HTML\n\n\`\`\`html\n${currentHtml.slice(0, 12000)}\n\`\`\`\n\n## 修改指令\n\n${userInstruction}\n\n请按照修改指令调整 HTML，返回完整的修改后 HTML 代码。`;
 
   const rawResponse = await callAI(provider, config, systemPrompt, userPrompt);
+  return extractHtml(rawResponse.content);
+}
+
+/**
+ * Streaming version of refinePage.
+ * Calls `onChunk(htmlString)` with progressively extracted HTML during generation.
+ */
+export async function refinePageStream(provider, config, currentHtml, userInstruction, onChunk, signal) {
+  if (!config?.apiKey) throw new Error('请先在设置中配置 AI 模型的 API Key');
+
+  const systemPrompt = `你是一个专业的 HTML/CSS 前端工程师。用户会给你当前页面的 HTML 代码和一条修改指令。请按照指令修改 HTML 并返回完整的修改后 HTML。
+
+规则：
+1. 返回完整的 HTML 文件（从 <!DOCTYPE> 到 </html>）
+2. 只修改用户要求的部分，保持其他内容不变
+3. 只输出 HTML 代码，不要输出任何解释性文字
+4. 不要用 markdown 代码块包裹，直接输出 HTML`;
+
+  const userPrompt = `## 当前页面 HTML\n\n\`\`\`html\n${currentHtml.slice(0, 12000)}\n\`\`\`\n\n## 修改指令\n\n${userInstruction}\n\n请按照修改指令调整 HTML，返回完整的修改后 HTML 代码。`;
+
+  const rawResponse = await callAIStream(provider, config, systemPrompt, userPrompt, (fullText) => {
+    const html = extractHtml(fullText);
+    if (html) onChunk?.(html);
+  }, signal);
+
   return extractHtml(rawResponse.content);
 }
 

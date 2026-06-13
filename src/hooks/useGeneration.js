@@ -33,6 +33,9 @@ export default function useGeneration({
   const [mobileGeneratedPages, setMobileGeneratedPages] = useState(null);
   const [wireframeHtmls, setWireframeHtmls] = useState([]);
 
+  // ── Page count range ──
+  const [pageCountRange, setPageCountRange] = useState(null); // { min, max, recommended } or null
+
   // ── Generation state ──
   const [isGenerating, setIsGenerating] = useState(false);
   const [generateError, setGenerateError] = useState('');
@@ -107,7 +110,8 @@ export default function useGeneration({
             setPlanningDiscoveredPages(partial.pages);
           }
         },
-        signal
+        signal,
+        pageCountRange
       );
 
       setPlanningPhase('complete');
@@ -147,6 +151,8 @@ export default function useGeneration({
         mobilePages: plan.mobilePages || null,
         styleSpec: plan.styleSpec,
         platform: plan.platform || 'pc',
+        pageCountRange: pageCountRange || null,
+        savedSchemeId: null, // will be set when user explicitly saves as scheme
       };
       const currentPlans = projectsRef.current[activeProjectId]?.savedPlans || [];
       const updatedPlans = [planEntry, ...currentPlans.filter((p) => p.id !== loadedPlanId)];
@@ -168,7 +174,7 @@ export default function useGeneration({
       // Always reset the generating ref to prevent UI lock-up
       isGeneratingRef.current = false;
     }
-  }, [contentDesc, selectedStyles, styleDesc, uploadedFiles, aiConfig, activeProvider, loadedPlanId, activeProjectId, updateCurrentProject, targetPlatform, setPages, setCurrentPageIndex, setGenerateError, setRightViewMode, projectsRef]);
+  }, [contentDesc, selectedStyles, styleDesc, uploadedFiles, aiConfig, activeProvider, loadedPlanId, activeProjectId, updateCurrentProject, targetPlatform, pageCountRange, setPages, setCurrentPageIndex, setGenerateError, setRightViewMode, projectsRef]);
 
   // ── Switch platform tabs in dual mode ──
 
@@ -395,6 +401,108 @@ export default function useGeneration({
     updateCurrentProject({ loadedPlanId: null });
   }, [updateCurrentProject, setRightViewMode]);
 
+  // ── Regenerate all pages from a saved plan/scheme ──
+
+  const handleRegenerateFromPlan = useCallback(async (plan) => {
+    // Load plan state first
+    const planPages = plan.plannedPages || [];
+    const planStyleSpec = plan.styleSpec || '';
+    const planPlatform = plan.platform === 'both' ? 'pc' : (plan.platform || 'pc');
+
+    if (!planPages.length) return;
+
+    // Set all plan state
+    setPlannedPages(planPages);
+    setPlannedStyleSpec(planStyleSpec);
+    setDetectedPlatform(planPlatform);
+    setPcPages(plan.pcPages || null);
+    setMobilePages(plan.mobilePages || null);
+    setPcGeneratedPages(null);
+    setMobileGeneratedPages(null);
+    setActivePlanPlatform(planPlatform);
+
+    // Restore project context
+    updateCurrentProject({
+      contentDesc: plan.description || '',
+      selectedStyles: plan.selectedStyles || ['business'],
+      styleDesc: plan.styleDesc || '',
+      loadedPlanId: plan.id,
+    });
+
+    // Start generation with plan data
+    setIsGenerating(true);
+    isGeneratingRef.current = true;
+    abortControllerRef.current = new AbortController();
+    const signal = abortControllerRef.current.signal;
+    setGenerateError('');
+    userSelectedPageRef.current = false;
+    setStreamingHtml('');
+    setStreamingPageIndex(0);
+    setProgressCurrent(0);
+    setProgressTotal(planPages.length);
+    setPages([]);
+    setCurrentPageIndex(0);
+
+    try {
+      const fileContents = uploadedFiles.length > 0 ? await readFileContents(uploadedFiles) : [];
+      const providerConfig = aiConfig[activeProvider] || {};
+
+      let completedCount = 0;
+      const result = await generateProjectPages(
+        activeProvider, providerConfig, planPages, planStyleSpec,
+        plan.description || contentDesc, fileContents,
+        plan.selectedStyles || selectedStyles, plan.styleDesc || styleDesc,
+        planPlatform,
+        (msg) => setGenerateProgress(msg),
+        (pageResult, index) => {
+          completedCount++;
+          setProgressCurrent(completedCount);
+          setPages((prev) => {
+            const next = [...prev];
+            next[index] = pageResult;
+            return next;
+          });
+        },
+        (html) => setStreamingHtml(html),
+        signal
+      );
+
+      setPages(result.pages);
+      if (result.pages.length > 0) {
+        setCurrentPageIndex(0);
+        setCode(result.pages[0].html || '');
+      }
+
+      // Save to history
+      const desc = (plan.description || contentDesc || '').slice(0, 80);
+      const entry = {
+        id: generateId(),
+        timestamp: formatTime(new Date()),
+        description: desc + (desc.length >= 80 ? '...' : ''),
+        styles: [...(plan.selectedStyles || selectedStyles)],
+        pages: result.pages,
+        pageCount: result.pages.length,
+        platform: planPlatform,
+      };
+      const currentHistory = projectsRef.current[activeProjectId]?.history || [];
+      updateCurrentProject({ history: [entry, ...currentHistory] });
+    } catch (err) {
+      if (err.name !== 'AbortError') {
+        setGenerateError(err.message || '重新生成失败');
+      }
+    } finally {
+      setIsGenerating(false);
+      isGeneratingRef.current = false;
+      setGenerateProgress('');
+      setProgressCurrent(0);
+      setProgressTotal(0);
+      setStreamingHtml('');
+      setStreamingPageIndex(null);
+      setRightViewMode('prototype');
+      userSelectedPageRef.current = false;
+    }
+  }, [contentDesc, selectedStyles, styleDesc, uploadedFiles, aiConfig, activeProvider, activeProjectId, updateCurrentProject, projectsRef, setPages, setCurrentPageIndex, setCode, setGenerateError, setRightViewMode]);
+
   // ── Cancel generation ──
 
   const handleCancelGeneration = useCallback(() => {
@@ -458,6 +566,71 @@ export default function useGeneration({
       setRightViewMode('plan');
     }
   }, [updateCurrentProject, setGenerateError, setRightViewMode]);
+
+  // ── Save complete scheme (plan + generated pages) ──
+
+  const handleSaveScheme = useCallback(() => {
+    const currentPlans = projectsRef.current[activeProjectId]?.savedPlans || [];
+    const currentPages = pagesRef.current || [];
+    const hasGeneratedPages = currentPages.some(p => p?.html);
+
+    // Find the plan entry for the current loaded plan
+    const loadedPlanId = projectsRef.current[activeProjectId]?.loadedPlanId;
+    let planEntry = currentPlans.find(p => p.id === loadedPlanId);
+
+    if (!planEntry) {
+      // No existing plan, create a new one from current state
+      planEntry = {
+        id: generateId(),
+        timestamp: formatTime(new Date()),
+        description: contentDesc || '未命名方案',
+        selectedStyles: [...selectedStyles],
+        styleDesc,
+        plannedPages: plannedPages || [],
+        pcPages: pcPages || null,
+        mobilePages: mobilePages || null,
+        styleSpec: plannedStyleSpec || '',
+        platform: detectedPlatform || 'pc',
+        pageCountRange: pageCountRange || null,
+      };
+    }
+
+    // Create a scheme with full data
+    const schemeId = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+    const schemeEntry = {
+      ...planEntry,
+      savedSchemeId: schemeId,
+      schemeTimestamp: formatTime(new Date()),
+      generatedPages: hasGeneratedPages ? currentPages.map(p => p ? { name: p.name, html: p.html || '', error: p.error || null } : null) : [],
+      schemeDescription: planEntry.description || contentDesc || '未命名方案',
+    };
+
+    // Replace existing plan if loaded, or add new
+    const updatedPlans = [
+      schemeEntry,
+      ...currentPlans.filter(p => p.id !== planEntry.id),
+    ];
+    updateCurrentProject({ savedPlans: updatedPlans, loadedPlanId: schemeEntry.id });
+    return schemeEntry;
+  }, [contentDesc, selectedStyles, styleDesc, plannedPages, pcPages, mobilePages, plannedStyleSpec, detectedPlatform, pageCountRange, activeProjectId, updateCurrentProject, projectsRef, pagesRef]);
+
+  // ── Load scheme and restore generated pages ──
+
+  const handleLoadScheme = useCallback((scheme) => {
+    // Load the plan part
+    handleLoadPlanWithWireframe(scheme);
+
+    // If scheme has generated pages, restore them too
+    if (scheme.generatedPages?.length > 0) {
+      const validPages = scheme.generatedPages.map(p => p ? { name: p.name, html: p.html || '', error: p.error || null } : null);
+      setPages(validPages);
+      if (validPages.length > 0 && validPages[0]?.html) {
+        setCurrentPageIndex(0);
+        setCode(validPages[0].html);
+        setRightViewMode('prototype');
+      }
+    }
+  }, [handleLoadPlanWithWireframe, setPages, setCurrentPageIndex, setCode, setRightViewMode]);
 
   // ── Reference constraint helper ──
 
@@ -587,6 +760,7 @@ export default function useGeneration({
     plannedStyleSpec, setPlannedStyleSpec,
     detectedPlatform, setDetectedPlatform,
     targetPlatform, setTargetPlatform,
+    pageCountRange, setPageCountRange,
     pcPages, setPcPages,
     mobilePages, setMobilePages,
     activePlanPlatform, setActivePlanPlatform,
@@ -610,8 +784,9 @@ export default function useGeneration({
     handlePlan, handleConfirmPlan, handleCancelPlan,
     handleCancelGeneration, handleSwitchPlanPlatform,
     handleViewPlan, handleViewPagePrototype,
-    handleLoadPlanWithWireframe,
+    handleLoadPlanWithWireframe, handleLoadScheme, handleSaveScheme,
     handleRegeneratePage, handleGenerateSinglePage,
+    handleRegenerateFromPlan,
     resetGenerationState,
   };
 }

@@ -3,7 +3,7 @@ import {
   X, Play, Trash2, Check, Layers, Clock, Search, Monitor, Smartphone,
   Copy, Pencil, ChevronDown, ChevronRight, SortAsc, Filter, Eye,
   LayoutGrid, List, ArrowUpDown, MoreHorizontal, Sparkles,
-  Palette, FileCode, Zap,
+  Palette, FileCode, Zap, RotateCcw, RefreshCw, Settings2,
 } from 'lucide-react';
 import { generateAllWireframes } from './PlanPreview.jsx';
 
@@ -31,6 +31,8 @@ export default function PlansHistoryModal({
   onDeletePlan,
   onDuplicatePlan,
   onRenamePlan,
+  onRegenerateFromPlan,
+  onAdjustPlan,
   onClose,
 }) {
   const overlayRef = useRef(null);
@@ -303,6 +305,15 @@ export default function PlansHistoryModal({
                               </span>
                               <span className="phm-meta-dot" />
                               <span className="phm-meta-text">{pageCount} 页面</span>
+                              {plan.generatedPages?.length > 0 && (
+                                <>
+                                  <span className="phm-meta-dot" />
+                                  <span className="phm-meta-text" style={{ color: 'var(--success)' }}>
+                                    <Check size={9} style={{ marginRight: 2 }} />
+                                    {plan.generatedPages.filter(p => p?.html).length} 页已生成
+                                  </span>
+                                </>
+                              )}
                               {plan.timestamp && (
                                 <>
                                   <span className="phm-meta-dot" />
@@ -344,6 +355,22 @@ export default function PlansHistoryModal({
                           title={isLoaded ? '当前方案' : '加载方案'}
                         >
                           {isLoaded ? <><Check size={13} />已加载</> : <><Play size={13} />加载</>}
+                        </button>
+                        {plan.generatedPages?.length > 0 && (
+                          <button
+                            className="phm-action-icon"
+                            onClick={() => onRegenerateFromPlan?.(plan)}
+                            title="根据此方案重新生成原型"
+                          >
+                            <RefreshCw size={13} />
+                          </button>
+                        )}
+                        <button
+                          className="phm-action-icon"
+                          onClick={() => onAdjustPlan?.(plan)}
+                          title="加载并调整此方案"
+                        >
+                          <Settings2 size={13} />
                         </button>
                         <button className="phm-action-icon" onClick={() => handleStartRename(plan)} title="重命名">
                           <Pencil size={13} />

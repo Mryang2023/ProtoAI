@@ -349,10 +349,13 @@ export default function App() {
           progressTotal={generation.progressTotal}
           targetPlatform={generation.targetPlatform}
           onTargetPlatformChange={generation.setTargetPlatform}
+          pageCountRange={generation.pageCountRange}
+          onPageCountRangeChange={generation.setPageCountRange}
           isDualPlatform={!!generation.pcPages && !!generation.mobilePages}
           activePlanPlatform={generation.activePlanPlatform}
           onSwitchPlanPlatform={generation.handleSwitchPlanPlatform}
           onOpenTemplateLibrary={() => ui.setShowTemplateLibrary(true)}
+          onSaveScheme={generation.handleSaveScheme}
           projectNotes={projects.currentProject.notes || ''}
           onProjectNotesChange={(v) => projects.updateCurrentProject({ notes: v })}
         />
@@ -443,6 +446,14 @@ export default function App() {
           onDeletePlan={savedPlans.handleDeletePlan}
           onDuplicatePlan={savedPlans.handleDuplicatePlan}
           onRenamePlan={savedPlans.handleRenamePlan}
+          onRegenerateFromPlan={(plan) => {
+            ui.setShowPlansHistory(false);
+            generation.handleRegenerateFromPlan(plan);
+          }}
+          onAdjustPlan={(plan) => {
+            ui.setShowPlansHistory(false);
+            generation.handleLoadPlanWithWireframe(plan);
+          }}
           onClose={() => ui.setShowPlansHistory(false)}
         />
       )}

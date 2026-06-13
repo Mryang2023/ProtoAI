@@ -11,7 +11,7 @@ import { buildStyleSpec, buildContextPrompt } from './generation.js';
  * Accepts an optional `onStream(text)` callback for real-time progress.
  * Returns { pages, styleSpec, platform } or { pcPages, mobilePages, styleSpec, platform: 'both' }
  */
-export async function planProject(provider, config, contentDesc, fileContents, selectedStyles, styleDesc, onProgress, targetPlatform = 'auto', onStream, signal) {
+export async function planProject(provider, config, contentDesc, fileContents, selectedStyles, styleDesc, onProgress, targetPlatform = 'auto', onStream, signal, pageCountRange = null) {
   if (!config?.apiKey) throw new Error('请先在设置中配置 AI 模型的 API Key');
 
   if (targetPlatform === 'both') {
@@ -19,8 +19,8 @@ export async function planProject(provider, config, contentDesc, fileContents, s
     onProgress?.('正在同时规划 PC 端和移动端方案...');
 
     const [pcPlan, mobilePlan] = await Promise.all([
-      planProjectForPlatform(provider, config, contentDesc, fileContents, selectedStyles, styleDesc, (msg) => onProgress?.(`[PC端] ${msg}`), 'pc', onStream ? (text) => onStream(text, 'pc') : null, signal),
-      planProjectForPlatform(provider, config, contentDesc, fileContents, selectedStyles, styleDesc, (msg) => onProgress?.(`[移动端] ${msg}`), 'mobile', onStream ? (text) => onStream(text, 'mobile') : null, signal),
+      planProjectForPlatform(provider, config, contentDesc, fileContents, selectedStyles, styleDesc, (msg) => onProgress?.(`[PC端] ${msg}`), 'pc', onStream ? (text) => onStream(text, 'pc') : null, signal, pageCountRange),
+      planProjectForPlatform(provider, config, contentDesc, fileContents, selectedStyles, styleDesc, (msg) => onProgress?.(`[移动端] ${msg}`), 'mobile', onStream ? (text) => onStream(text, 'mobile') : null, signal, pageCountRange),
     ]);
 
     return {
@@ -33,10 +33,10 @@ export async function planProject(provider, config, contentDesc, fileContents, s
   }
 
   onProgress?.('正在分析需求，规划页面结构...');
-  return planProjectForPlatform(provider, config, contentDesc, fileContents, selectedStyles, styleDesc, onProgress, targetPlatform === 'auto' ? null : targetPlatform, onStream ? (text) => onStream(text, targetPlatform) : null, signal);
+  return planProjectForPlatform(provider, config, contentDesc, fileContents, selectedStyles, styleDesc, onProgress, targetPlatform === 'auto' ? null : targetPlatform, onStream ? (text) => onStream(text, targetPlatform) : null, signal, pageCountRange);
 }
 
-async function planProjectForPlatform(provider, config, contentDesc, fileContents, selectedStyles, styleDesc, onProgress, platform, onStream, signal) {
+async function planProjectForPlatform(provider, config, contentDesc, fileContents, selectedStyles, styleDesc, onProgress, platform, onStream, signal, pageCountRange = null) {
   const styleSpec = buildStyleSpec(selectedStyles, styleDesc);
 
   let platformInstruction = '';
@@ -83,7 +83,7 @@ ${!platform ? `platform 判断规则：
 2. route 使用英文小写 kebab-case 格式，以 / 开头
 3. sections 要尽可能详细
 4. 不要输出任何其他内容，只输出 JSON 对象
-5. ${platform === 'mobile' ? '所有页面必须按移动端设计规范规划' : platform === 'pc' ? '所有页面必须按PC端设计规范规划' : '根据判断的平台选择对应的设计规范'}`;
+5. ${platform === 'mobile' ? '所有页面必须按移动端设计规范规划' : platform === 'pc' ? '所有页面必须按PC端设计规范规划' : '根据判断的平台选择对应的设计规范'}${pageCountRange ? `\n6. 页面总数必须控制在 ${pageCountRange.min} 到 ${pageCountRange.max} 个之间，目标约 ${pageCountRange.recommended || Math.round((pageCountRange.min + pageCountRange.max) / 2)} 个页面。请合理规划页面拆分，不要过多也不要过少。` : ''}`;
 
   const userPrompt = buildContextPrompt(contentDesc, fileContents, selectedStyles, styleDesc)
     + '\n\n' + styleSpec

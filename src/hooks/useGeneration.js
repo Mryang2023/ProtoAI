@@ -54,6 +54,11 @@ export default function useGeneration({
   const [isRegenerating, setIsRegenerating] = useState(false);
   const [regeneratingPageIndex, setRegeneratingPageIndex] = useState(null);
 
+  // ── Add new page state ──
+  const [isAddingPage, setIsAddingPage] = useState(false);
+  const [showAddPageForm, setShowAddPageForm] = useState(false);
+  const [newPageInput, setNewPageInput] = useState({ name: '', description: '' });
+
   // ── Session state ──
   const [uploadedFiles, setUploadedFiles] = useState([]);
   const handleFilesAdd = useCallback((newFiles) => setUploadedFiles((prev) => [...prev, ...newFiles]), []);
@@ -789,6 +794,56 @@ export default function useGeneration({
     }
   }, [plannedPages, isRegenerating, isGenerating, aiConfig, activeProvider, contentDesc, selectedStyles, styleDesc, referenceSite, plannedStyleSpec, uploadedFiles, detectedPlatform, setPages, setCurrentPageIndex, setCode, setRightViewMode, setGenerateError, getReferenceConstraint]);
 
+  // ── Add new page dynamically ──
+
+  const handleAddNewPage = useCallback(async () => {
+    if (!newPageInput.name || !newPageInput.description) return;
+
+    setIsAddingPage(true);
+    const newPageIndex = pages.length; // Append to end
+
+    try {
+      const providerConfig = aiConfig[activeProvider] || {};
+      const fileContents = uploadedFiles.length > 0 ? await readFileContents(uploadedFiles) : [];
+      const styleSpec = plannedStyleSpec || buildStyleSpec(selectedStyles, styleDesc, referenceSite);
+
+      // Extract reference constraint from first page (if exists)
+      const referenceConstraint = getReferenceConstraint(newPageIndex);
+
+      // Build new page object
+      const newPage = {
+        name: newPageInput.name,
+        description: newPageInput.description,
+        route: `/${newPageInput.name.toLowerCase().replace(/\s+/g, '-')}`,
+      };
+
+      // Generate HTML using existing single-page generation
+      const result = await generateSinglePage(
+        activeProvider, providerConfig, newPage, styleSpec,
+        contentDesc, fileContents, selectedStyles, styleDesc,
+        [...pages, newPage], // Pass all pages + new one for navigation context
+        detectedPlatform,
+        undefined, referenceConstraint
+      );
+
+      // Append to pages array
+      setPages((prev) => [...prev, { ...newPage, html: result.html || '', error: null }]);
+
+      // Switch to new page
+      setCurrentPageIndex(newPageIndex);
+      setCode(result.html || '');
+      setRightViewMode('prototype');
+
+      // Reset form
+      setNewPageInput({ name: '', description: '' });
+      setShowAddPageForm(false);
+    } catch (err) {
+      setGenerateError(`添加页面失败：${err.message}`);
+    } finally {
+      setIsAddingPage(false);
+    }
+  }, [newPageInput, pages, aiConfig, activeProvider, plannedStyleSpec, selectedStyles, styleDesc, referenceSite, contentDesc, uploadedFiles, detectedPlatform, getReferenceConstraint, setCurrentPageIndex, setCode, setRightViewMode, setGenerateError]);
+
   // ── Reset generation state (used during project switch) ──
 
   const resetGenerationState = useCallback(() => {
@@ -843,6 +898,8 @@ export default function useGeneration({
     streamingHtml, streamingPageIndex,
     planningStreamText, planningDiscoveredPages, planningPhase,
     isRegenerating, setIsRegenerating, regeneratingPageIndex,
+    // Add page
+    isAddingPage, showAddPageForm, setShowAddPageForm, newPageInput, setNewPageInput, handleAddNewPage,
     // Files
     uploadedFiles, handleFilesAdd, handleFileRemove,
     // Refs

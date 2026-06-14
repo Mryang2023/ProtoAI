@@ -49,6 +49,11 @@ export default function LeftPanel({
   onSaveAsTemplate,
   projectNotes = '',
   onProjectNotesChange,
+  // Add new page props
+  isAddingPage,
+  showAddPageForm, setShowAddPageForm,
+  newPageInput, setNewPageInput,
+  handleAddNewPage,
 }) {
   const [panelWidth, setPanelWidth] = useState(400);
   const [stylesExpanded, setStylesExpanded] = useState(false);
@@ -295,6 +300,87 @@ export default function LeftPanel({
                 <Star size={14} />
                 保存为模板
               </button>
+            )}
+
+            {/* Add New Page button — shown after all pages generated */}
+            {allDone && totalPlanned > 0 && !isGenerating && (
+              <button
+                className="btn btn-primary add-page-btn"
+                onClick={() => setShowAddPageForm(true)}
+                style={{ marginTop: 'var(--sp-2)', width: '100%', justifyContent: 'center', gap: 6 }}
+              >
+                <Plus size={14} />
+                添加新页面
+              </button>
+            )}
+
+            {/* Add Page Form Modal/Inline */}
+            {showAddPageForm && (
+              <section className="panel-section" style={{ 
+                marginTop: 'var(--sp-2)', 
+                padding: 'var(--sp-3)',
+                background: 'var(--bg-subtle)',
+                borderRadius: '8px',
+                border: '1px solid var(--border)'
+              }}>
+                <div className="panel-section-header">
+                  <Plus size={14} style={{ color: 'var(--accent)' }} />
+                  <span className="section-label">新增页面</span>
+                  <button 
+                    className="btn btn-icon btn-sm"
+                    onClick={() => setShowAddPageForm(false)}
+                    title="取消"
+                  >
+                    <X size={14} />
+                  </button>
+                </div>
+                
+                <div style={{ marginTop: 'var(--sp-2)' }}>
+                  <label className="input-label">页面名称</label>
+                  <input
+                    type="text"
+                    className="input-field"
+                    value={newPageInput.name}
+                    onChange={(e) => setNewPageInput(prev => ({ ...prev, name: e.target.value }))}
+                    placeholder="例如：用户中心"
+                    maxLength={50}
+                  />
+                </div>
+                
+                <div style={{ marginTop: 'var(--sp-2)' }}>
+                  <label className="input-label">页面描述</label>
+                  <textarea
+                    className="textarea-field"
+                    value={newPageInput.description}
+                    onChange={(e) => setNewPageInput(prev => ({ ...prev, description: e.target.value }))}
+                    placeholder="描述这个页面的功能和内容..."
+                    maxLength={500}
+                    rows={3}
+                  />
+                </div>
+                
+                <div style={{ marginTop: 'var(--sp-3)', display: 'flex', gap: 'var(--sp-2)' }}>
+                  <button
+                    className="btn btn-primary"
+                    onClick={handleAddNewPage}
+                    disabled={isAddingPage || !newPageInput.name || !newPageInput.description}
+                    style={{ flex: 1 }}
+                  >
+                    {isAddingPage ? (
+                      <><Loader2 size={14} className="spin-animation" />生成中...</>
+                    ) : (
+                      <><Sparkles size={14} />确认添加</>
+                    )}
+                  </button>
+                  <button
+                    className="btn btn-ghost"
+                    onClick={() => setShowAddPageForm(false)}
+                    disabled={isAddingPage}
+                  >
+                    取消
+                  </button>
+                </div>
+              </section>
             )}
 
             {!isGenerating && !allDone && (

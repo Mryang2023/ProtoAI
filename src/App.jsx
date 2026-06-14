@@ -386,6 +386,13 @@ export default function App() {
           onSaveAsTemplate={() => setShowSaveTemplateModal(true)}
           projectNotes={projects.currentProject.notes || ''}
           onProjectNotesChange={(v) => projects.updateCurrentProject({ notes: v })}
+          // Add new page props
+          isAddingPage={generation.isAddingPage}
+          showAddPageForm={generation.showAddPageForm}
+          setShowAddPageForm={generation.setShowAddPageForm}
+          newPageInput={generation.newPageInput}
+          setNewPageInput={generation.setNewPageInput}
+          handleAddNewPage={generation.handleAddNewPage}
         />
 
         <RightPanel

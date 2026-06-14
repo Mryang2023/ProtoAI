@@ -79,7 +79,8 @@ export default function useGeneration({
   pageCountRangeRef.current = pageCountRange;
 
   // Phase 1B: Full planning with confirmed page count range
-  const doFullPlanning = useCallback(async () => {
+  const doFullPlanning = useCallback(async (overrideDesc) => {
+    const desc = overrideDesc || contentDesc;
     const confirmedRange = pageCountRangeRef.current;
     setIsGenerating(true);
     isGeneratingRef.current = true;
@@ -112,7 +113,7 @@ export default function useGeneration({
 
       const providerConfig = aiConfig[activeProvider] || {};
       const plan = await planProject(
-        activeProvider, providerConfig, contentDesc, fileContents,
+        activeProvider, providerConfig, desc, fileContents,
         selectedStyles, styleDesc,
         (msg) => setGenerateProgress(msg),
         targetPlatform,
@@ -159,7 +160,7 @@ export default function useGeneration({
       const planEntry = {
         id: generateId(),
         timestamp: formatTime(new Date()),
-        description: contentDesc || '文件导入生成',
+        description: desc || '文件导入生成',
         selectedStyles: [...selectedStyles],
         styleDesc,
         plannedPages: plan.platform === 'both' ? plan.pcPages : plan.pages,
@@ -192,12 +193,14 @@ export default function useGeneration({
   }, [contentDesc, selectedStyles, styleDesc, referenceSite, uploadedFiles, aiConfig, activeProvider, loadedPlanId, activeProjectId, updateCurrentProject, targetPlatform, setPages, setCurrentPageIndex, setGenerateError, setRightViewMode, projectsRef]);
 
   // Phase 1A: handlePlan entry — pre-analysis or full planning
-  const handlePlan = useCallback(async () => {
+  const handlePlan = useCallback(async (overrideDesc) => {
     // If page count range already confirmed, go straight to full planning
     if (pageCountRange) {
-      await doFullPlanning();
+      await doFullPlanning(overrideDesc);
       return;
     }
+
+    const desc = overrideDesc || contentDesc;
 
     // Phase 0: Quick pre-analysis to estimate page count
     setIsPreAnalyzing(true);
@@ -209,7 +212,7 @@ export default function useGeneration({
     try {
       const fileContents = uploadedFiles.length > 0 ? await readFileContents(uploadedFiles) : [];
       const providerConfig = aiConfig[activeProvider] || {};
-      const estimate = await estimatePageCount(activeProvider, providerConfig, contentDesc, fileContents);
+      const estimate = await estimatePageCount(activeProvider, providerConfig, desc, fileContents);
       setPageEstimate(estimate);
       setPageCountRange({ min: estimate.min, max: estimate.max, recommended: estimate.recommended });
       setAwaitingPageConfirm(true);
@@ -238,12 +241,12 @@ export default function useGeneration({
   }, [doFullPlanning]);
 
   // Skip page count prediction — let AI decide freely
-  const handleSkipPageCount = useCallback(() => {
+  const handleSkipPageCount = useCallback((overrideDesc) => {
     setPageCountRange(null);
     pageCountRangeRef.current = null;
     setPageEstimate(null);
     setAwaitingPageConfirm(false);
-    doFullPlanning();
+    doFullPlanning(overrideDesc);
   }, [doFullPlanning]);
 
   // ── Switch platform tabs in dual mode ──

@@ -11,6 +11,7 @@ import QrPreviewModal from './components/QrPreviewModal.jsx';
 import TemplateLibrary from './components/TemplateLibrary.jsx';
 import SaveAsTemplateModal, { loadCustomTemplates, saveCustomTemplates } from './components/SaveAsTemplateModal.jsx';
 import { generateAllWireframes } from './components/PlanPreview.jsx';
+import { getTemplatePages } from './templatePages.js';
 
 import useProjects from './hooks/useProjects.js';
 import useTheme from './hooks/useTheme.js';
@@ -231,7 +232,31 @@ export default function App() {
   const handleSelectTemplate = useCallback((template) => {
     projects.updateCurrentProject({ contentDesc: template.prompt });
     ui.setShowTemplateLibrary(false);
-  }, [projects.updateCurrentProject, ui.setShowTemplateLibrary]);
+
+    // Check for pre-generated pages
+    const preGenerated = getTemplatePages(template);
+    if (preGenerated && preGenerated.length > 0) {
+      // Load pre-generated pages directly — no AI needed
+      projects.setPages(preGenerated);
+      ui.setCurrentPageIndex(0);
+      codeRefine.setCode(preGenerated[0].html || '');
+      ui.setRightViewMode('prototype');
+      // Generate wireframes for the plan view
+      const wfPages = preGenerated.map((p, i) => ({
+        name: p.name,
+        route: `/${p.name}`,
+        description: '',
+        sections: [],
+        elements: [],
+      }));
+      generation.setWireframeHtmls(generateAllWireframes(wfPages, 'pc'));
+    } else {
+      // No pre-generated pages — fall back to AI generation
+      generation.handleSkipPageCount(template.prompt);
+    }
+  }, [projects.updateCurrentProject, projects.setPages, ui.setShowTemplateLibrary,
+      ui.setCurrentPageIndex, ui.setRightViewMode, codeRefine.setCode,
+      generation.handleSkipPageCount, generation.setWireframeHtmls]);
 
   // ── Global keyboard shortcuts ──
   useEffect(() => {

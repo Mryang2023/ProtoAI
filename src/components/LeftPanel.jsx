@@ -58,6 +58,7 @@ export default function LeftPanel({
   const [panelWidth, setPanelWidth] = useState(400);
   const [stylesExpanded, setStylesExpanded] = useState(false);
   const [notesExpanded, setNotesExpanded] = useState(false);
+  const [skipPreAnalysis, setSkipPreAnalysis] = useState(false);
   const isResizing = useRef(false);
 
   const handleMouseDown = useCallback((e) => {
@@ -674,17 +675,40 @@ export default function LeftPanel({
                 从模板库选择
               </button>
             )}
+
+            {/* Skip pre-analysis toggle — always visible before generation */}
+            <label
+              className="skip-preanalysis-toggle"
+              title="开启后将跳过概要分析步骤，AI 直接根据需求规划并生成页面"
+            >
+              <input
+                type="checkbox"
+                checked={skipPreAnalysis}
+                onChange={(e) => setSkipPreAnalysis(e.target.checked)}
+                disabled={isGenerating}
+              />
+              <span className="skip-toggle-label">跳过概要分析，直接生成</span>
+            </label>
+
             <button
               className="btn-generate"
-              onClick={onPlan}
+              onClick={() => {
+                if (skipPreAnalysis) {
+                  onSkipPageCount();
+                } else {
+                  onPlan();
+                }
+              }}
               disabled={isGenerating || isPreAnalyzing || !hasInput}
-              aria-label="规划方案"
+              aria-label={skipPreAnalysis ? '直接生成' : '规划方案'}
               style={{ marginTop: 'var(--sp-2)' }}
             >
               {isPreAnalyzing ? (
                 <><span className="spinner" />分析需求中...</>
               ) : isGenerating ? (
                 <><span className="spinner" />分析中...</>
+              ) : skipPreAnalysis ? (
+                <><Sparkles size={18} />直接生成</>
               ) : (
                 <><Sparkles size={18} />规划方案{targetPlatform === 'both' ? '（双端）' : ''}</>
               )}

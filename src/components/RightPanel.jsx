@@ -68,6 +68,8 @@ export default function RightPanel({
   const [planPageIndex, setPlanPageIndex] = useState(0);
   const exportRef = useRef(null);
   const iframeRef = useRef(null);
+  const previewContainerRef = useRef(null);
+  const userScrolledRef = useRef(false);
 
   const hasMultiplePages = pages.filter((p) => p?.html).length > 1;
 
@@ -130,6 +132,64 @@ export default function RightPanel({
       }
     }
   }, [isGenerating, streamingPageIndex, userPreviewIndex]);
+
+  // ── Auto-scroll preview container to follow generating page card ──
+  useEffect(() => {
+    if (!isGenerating) {
+      userScrolledRef.current = false;
+      return;
+    }
+    if (userScrolledRef.current || userPreviewIndex !== null) return;
+
+    const container = previewContainerRef.current;
+    if (!container) return;
+
+    // Find the currently generating card in the progress grid
+    const generatingCard = container.querySelector('.progress-preview-card.generating');
+    if (generatingCard) {
+      generatingCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+  }, [isGenerating, streamingPageIndex, progressCurrent, userPreviewIndex]);
+
+  // ── Auto-scroll iframe content during streaming ──
+  useEffect(() => {
+    if (!isGenerating || !streamingHtml || userPreviewIndex !== null) return;
+    if (userScrolledRef.current) return;
+
+    const iframe = iframeRef.current;
+    if (!iframe?.contentDocument?.body) return;
+
+    const body = iframe.contentDocument.body;
+    const scrollTarget = Math.max(0, body.scrollHeight - iframe.clientHeight);
+    if (scrollTarget > 0) {
+      iframe.contentWindow.scrollTo({
+        top: scrollTarget * 0.6,
+        behavior: 'smooth',
+      });
+    }
+  }, [streamingHtml, isGenerating, userPreviewIndex]);
+
+  // Track user manual scroll to disable auto-scroll
+  useEffect(() => {
+    const container = previewContainerRef.current;
+    if (!container) return;
+
+    let scrollTimeout;
+    const handleWheel = () => {
+      userScrolledRef.current = true;
+      clearTimeout(scrollTimeout);
+      // Re-enable auto-scroll after 5 seconds of inactivity
+      scrollTimeout = setTimeout(() => {
+        userScrolledRef.current = false;
+      }, 5000);
+    };
+
+    container.addEventListener('wheel', handleWheel, { passive: true });
+    return () => {
+      container.removeEventListener('wheel', handleWheel);
+      clearTimeout(scrollTimeout);
+    };
+  }, []);
 
   // Reset plan page index when plannedPages changes
   useEffect(() => {
@@ -410,7 +470,7 @@ export default function RightPanel({
           )}
 
           {/* Preview area */}
-          <div className="preview-frame-container">
+          <div className="preview-frame-container" ref={previewContainerRef}>
             {error ? (
               <ErrorState message={error} />
             ) : showPlanningView ? (

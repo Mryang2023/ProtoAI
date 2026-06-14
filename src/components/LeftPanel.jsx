@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { Sparkles, FileText, Palette, Bot, Check, X, LayoutList, Trash2, Play, Monitor, Smartphone, ChevronDown, Plus, RotateCcw, Eye, Zap, Loader2, CheckCircle2, AlertCircle, ArrowRight, Layout, StickyNote, Hash, Save, Globe } from 'lucide-react';
+import { Sparkles, FileText, Palette, Bot, Check, X, LayoutList, Trash2, Play, Monitor, Smartphone, ChevronDown, Plus, RotateCcw, Eye, Zap, Loader2, CheckCircle2, AlertCircle, ArrowRight, Layout, StickyNote, Hash, Save, Globe, Star } from 'lucide-react';
 import StyleTags from './StyleTags.jsx';
 import FileUpload from './FileUpload.jsx';
 
@@ -46,6 +46,7 @@ export default function LeftPanel({
   onSwitchPlanPlatform,
   onOpenTemplateLibrary,
   onSaveScheme,
+  onSaveAsTemplate,
   projectNotes = '',
   onProjectNotesChange,
 }) {
@@ -278,6 +279,21 @@ export default function LeftPanel({
               >
                 <Save size={14} />
                 保存完整方案
+              </button>
+            )}
+
+            {/* Save as Template button — shown after all pages are generated */}
+            {allDone && totalPlanned > 0 && onSaveAsTemplate && (
+              <button
+                className="btn save-scheme-btn"
+                onClick={onSaveAsTemplate}
+                style={{
+                  marginTop: 'var(--sp-1)', width: '100%', justifyContent: 'center', gap: 6,
+                  borderColor: '#f59e0b', color: '#f59e0b', background: 'color-mix(in srgb, #f59e0b 6%, transparent)',
+                }}
+              >
+                <Star size={14} />
+                保存为模板
               </button>
             )}
 

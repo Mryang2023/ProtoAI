@@ -318,7 +318,7 @@ export default function useGeneration({
               return next;
             });
           },
-          (html) => setStreamingHtml(html),
+          (html, index) => { setStreamingHtml(html); setStreamingPageIndex(index); },
           signal
         );
         setPcGeneratedPages(pcResult.pages);
@@ -341,7 +341,7 @@ export default function useGeneration({
               return next;
             });
           },
-          (html) => setStreamingHtml(html),
+          (html, index) => { setStreamingHtml(html); setStreamingPageIndex(index); },
           signal
         );
         setMobileGeneratedPages(mobileResult.pages);
@@ -399,7 +399,7 @@ export default function useGeneration({
               return next;
             });
           },
-          (html) => setStreamingHtml(html),
+          (html, index) => { setStreamingHtml(html); setStreamingPageIndex(index); },
           signal
         );
 
@@ -528,7 +528,7 @@ export default function useGeneration({
             return next;
           });
         },
-        (html) => setStreamingHtml(html),
+        (html, index) => { setStreamingHtml(html); setStreamingPageIndex(index); },
         signal
       );
 

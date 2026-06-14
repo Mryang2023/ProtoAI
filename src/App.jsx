@@ -1,4 +1,4 @@
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Component as ReactComponent } from 'react';
 import TopBar from './components/TopBar.jsx';
 import LeftPanel from './components/LeftPanel.jsx';
@@ -9,6 +9,7 @@ import VersionHistory from './components/VersionHistory.jsx';
 import PlansHistoryModal from './components/PlansHistoryModal.jsx';
 import QrPreviewModal from './components/QrPreviewModal.jsx';
 import TemplateLibrary from './components/TemplateLibrary.jsx';
+import SaveAsTemplateModal, { loadCustomTemplates, saveCustomTemplates } from './components/SaveAsTemplateModal.jsx';
 import { generateAllWireframes } from './components/PlanPreview.jsx';
 
 import useProjects from './hooks/useProjects.js';
@@ -66,6 +67,26 @@ export default function App() {
   const theme = useTheme();
   const aiSettings = useAiSettings();
   const ui = useUIState();
+
+  // ── Custom templates ──
+  const [customTemplates, setCustomTemplates] = useState(() => loadCustomTemplates());
+  const [showSaveTemplateModal, setShowSaveTemplateModal] = useState(false);
+
+  const handleAddCustomTemplate = useCallback((template) => {
+    setCustomTemplates(prev => {
+      const next = [template, ...prev];
+      saveCustomTemplates(next);
+      return next;
+    });
+  }, []);
+
+  const handleDeleteCustomTemplate = useCallback((id) => {
+    setCustomTemplates(prev => {
+      const next = prev.filter(t => t.id !== id);
+      saveCustomTemplates(next);
+      return next;
+    });
+  }, []);
 
   // ── Code & refine (must be created before generation, so its setters can be passed in) ──
   const codeRefine = useCodeRefine({
@@ -362,6 +383,7 @@ export default function App() {
           onSwitchPlanPlatform={generation.handleSwitchPlanPlatform}
           onOpenTemplateLibrary={() => ui.setShowTemplateLibrary(true)}
           onSaveScheme={generation.handleSaveScheme}
+          onSaveAsTemplate={() => setShowSaveTemplateModal(true)}
           projectNotes={projects.currentProject.notes || ''}
           onProjectNotesChange={(v) => projects.updateCurrentProject({ notes: v })}
         />
@@ -371,6 +393,7 @@ export default function App() {
           isGenerating={generation.isGenerating}
           detectedPlatform={generation.detectedPlatform}
           streamingHtml={generation.streamingHtml}
+          streamingPageIndex={generation.streamingPageIndex}
           planningStreamText={generation.planningStreamText}
           planningDiscoveredPages={generation.planningDiscoveredPages}
           planningPhase={generation.planningPhase}
@@ -475,6 +498,16 @@ export default function App() {
         <TemplateLibrary
           onSelect={handleSelectTemplate}
           onClose={() => ui.setShowTemplateLibrary(false)}
+          customTemplates={customTemplates}
+          onDeleteCustomTemplate={handleDeleteCustomTemplate}
+        />
+      )}
+
+      {showSaveTemplateModal && (
+        <SaveAsTemplateModal
+          onSave={handleAddCustomTemplate}
+          onClose={() => setShowSaveTemplateModal(false)}
+          defaultContent={projects.contentDesc}
         />
       )}
     </div>

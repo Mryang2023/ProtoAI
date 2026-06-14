@@ -6,6 +6,7 @@ import {
   ClipboardCheck, LogIn, GraduationCap, Heart, UtensilsCrossed,
   TrendingUp, Briefcase, FileText, Image, ShieldCheck, Layers,
   Stethoscope, Wallet, Plane, Home, Monitor, Smartphone,
+  ArrowRight, Star, Trash2, BookmarkPlus,
 } from 'lucide-react';
 
 const ICON_MAP = {
@@ -17,9 +18,9 @@ const ICON_MAP = {
   Stethoscope, Wallet, Plane, Home,
 };
 
-// ── Template Data ──────────────────────────────────────
+// ── Built-in Template Data ─────────────────────────────
 
-const TEMPLATES = [
+const BUILTIN_TEMPLATES = [
   // ── 电商/商城 ──
   {
     id: 'ecommerce-home', category: '电商/商城', type: 'page',
@@ -265,7 +266,7 @@ const TEMPLATES = [
 
 // ── Category Config ────────────────────────────────────
 
-const CATEGORIES = [
+const BUILTIN_CATEGORIES = [
   { key: 'all', label: '全部', icon: Layout },
   { key: '电商/商城', label: '电商/商城', icon: ShoppingBag },
   { key: 'SaaS/后台', label: 'SaaS/后台', icon: BarChart3 },
@@ -279,30 +280,65 @@ const CATEGORIES = [
   { key: '房产/家居', label: '房产/家居', icon: Home },
 ];
 
+// ── Helper: parse page list from project prompt ──
+function parseProjectPages(prompt) {
+  if (!prompt) return [];
+  const lines = prompt.split('\n');
+  const pages = [];
+  for (const line of lines) {
+    const match = line.match(/^\s*(\d+)\.\s*(.+?)(?:（(.+?)）)?\s*$/);
+    if (match) {
+      pages.push({ num: parseInt(match[1]), name: match[2].trim(), desc: match[3] || '' });
+    }
+  }
+  return pages;
+}
+
 // ── Component ──────────────────────────────────────────
 
-export default function TemplateLibrary({ onSelect, onClose }) {
+export default function TemplateLibrary({ onSelect, onClose, customTemplates = [], onDeleteCustomTemplate }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeCategory, setActiveCategory] = useState('all');
   const [hoveredId, setHoveredId] = useState(null);
   const [typeFilter, setTypeFilter] = useState('all'); // 'all' | 'page' | 'project'
+  const [selectedTemplate, setSelectedTemplate] = useState(null); // preview detail
+
+  // Merge built-in + custom templates
+  const allTemplates = useMemo(() => {
+    const custom = customTemplates.map(t => ({ ...t, isCustom: true }));
+    return [...custom, ...BUILTIN_TEMPLATES];
+  }, [customTemplates]);
 
   useEffect(() => {
     const handler = (e) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape') {
+        if (selectedTemplate) setSelectedTemplate(null);
+        else onClose();
+      }
     };
     document.addEventListener('keydown', handler);
     return () => document.removeEventListener('keydown', handler);
-  }, [onClose]);
+  }, [onClose, selectedTemplate]);
 
   const handleSelect = (template) => {
     onSelect(template);
     onClose();
   };
 
+  // Build categories including custom
+  const categories = useMemo(() => {
+    const customCount = customTemplates.length;
+    if (customCount > 0) {
+      return [{ key: 'custom', label: '我的模板', icon: BookmarkPlus }, ...BUILTIN_CATEGORIES];
+    }
+    return BUILTIN_CATEGORIES;
+  }, [customTemplates]);
+
   const filteredTemplates = useMemo(() => {
-    let result = TEMPLATES;
-    if (activeCategory !== 'all') {
+    let result = allTemplates;
+    if (activeCategory === 'custom') {
+      result = result.filter(t => t.isCustom);
+    } else if (activeCategory !== 'all') {
       result = result.filter(t => t.category === activeCategory);
     }
     if (typeFilter !== 'all') {
@@ -318,10 +354,22 @@ export default function TemplateLibrary({ onSelect, onClose }) {
       );
     }
     return result;
-  }, [activeCategory, typeFilter, searchQuery]);
+  }, [activeCategory, typeFilter, searchQuery, allTemplates]);
 
-  const projectCount = TEMPLATES.filter(t => t.type === 'project').length;
-  const pageCount = TEMPLATES.filter(t => t.type === 'page').length;
+  const projectCount = allTemplates.filter(t => t.type === 'project').length;
+  const pageCount = allTemplates.filter(t => t.type === 'page').length;
+
+  // Handle card click — open detail preview instead of immediate select
+  const handleCardClick = (template) => {
+    setSelectedTemplate(template);
+  };
+
+  // Confirm selection from detail view
+  const handleConfirmSelect = () => {
+    if (selectedTemplate) {
+      handleSelect(selectedTemplate);
+    }
+  };
 
   return (
     <div
@@ -329,158 +377,295 @@ export default function TemplateLibrary({ onSelect, onClose }) {
       onClick={onClose}
     >
       <div
-        className="tl-modal"
+        className={`tl-modal${selectedTemplate ? ' tl-has-detail' : ''}`}
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-labelledby="template-library-title"
       >
-        {/* Header */}
-        <div className="tl-header">
-          <div className="tl-header-text">
-            <h2 id="template-library-title" className="tl-title">模板库</h2>
-            <p className="tl-subtitle">
-              {TEMPLATES.length} 个模板 · {projectCount} 个完整项目 · {pageCount} 个单页面
-            </p>
-          </div>
-          <button className="tl-close" onClick={onClose} aria-label="关闭">
-            <X size={18} />
-          </button>
-        </div>
-
-        {/* Search */}
-        <div className="tl-search-wrap">
-          <Search size={15} className="tl-search-icon" />
-          <input
-            type="text"
-            className="tl-search-input"
-            placeholder="搜索模板名称、描述、标签..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            autoFocus
-          />
-          {searchQuery && (
-            <button className="tl-search-clear" onClick={() => setSearchQuery('')}>
-              <X size={13} />
+        {/* Left: Grid area */}
+        <div className="tl-main">
+          {/* Header */}
+          <div className="tl-header">
+            <div className="tl-header-text">
+              <h2 id="template-library-title" className="tl-title">模板库</h2>
+              <p className="tl-subtitle">
+                {allTemplates.length} 个模板 · {projectCount} 个完整项目 · {pageCount} 个单页面
+                {customTemplates.length > 0 && ` · ${customTemplates.length} 个自定义`}
+              </p>
+            </div>
+            <button className="tl-close" onClick={onClose} aria-label="关闭">
+              <X size={18} />
             </button>
-          )}
-        </div>
+          </div>
 
-        {/* Type filter (page vs project) */}
-        <div className="tl-type-filter">
-          <button
-            className={`tl-type-btn${typeFilter === 'all' ? ' active' : ''}`}
-            onClick={() => setTypeFilter('all')}
-          >
-            全部 <span className="tl-type-count">{TEMPLATES.length}</span>
-          </button>
-          <button
-            className={`tl-type-btn${typeFilter === 'project' ? ' active' : ''}`}
-            onClick={() => setTypeFilter('project')}
-          >
-            <Layers size={12} /> 完整项目 <span className="tl-type-count">{projectCount}</span>
-          </button>
-          <button
-            className={`tl-type-btn${typeFilter === 'page' ? ' active' : ''}`}
-            onClick={() => setTypeFilter('page')}
-          >
-            <FileText size={12} /> 单页面 <span className="tl-type-count">{pageCount}</span>
-          </button>
-        </div>
-
-        {/* Category tabs */}
-        <div className="tl-categories">
-          {CATEGORIES.map(({ key, label, icon: Icon }) => {
-            const count = key === 'all'
-              ? TEMPLATES.length
-              : TEMPLATES.filter(t => t.category === key).length;
-            if (count === 0 && key !== 'all') return null;
-            return (
-              <button
-                key={key}
-                className={`tl-cat-tab${activeCategory === key ? ' active' : ''}`}
-                onClick={() => setActiveCategory(key)}
-              >
-                <Icon size={13} />
-                <span>{label}</span>
-                {count > 0 && <span className="tl-cat-count">{count}</span>}
+          {/* Search */}
+          <div className="tl-search-wrap">
+            <Search size={15} className="tl-search-icon" />
+            <input
+              type="text"
+              className="tl-search-input"
+              placeholder="搜索模板名称、描述、标签..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              autoFocus
+            />
+            {searchQuery && (
+              <button className="tl-search-clear" onClick={() => setSearchQuery('')}>
+                <X size={13} />
               </button>
-            );
-          })}
-        </div>
+            )}
+          </div>
 
-        {/* Template grid */}
-        <div className="tl-body">
-          {filteredTemplates.length === 0 ? (
-            <div className="tl-empty">
-              <Search size={28} style={{ opacity: 0.3 }} />
-              <p>未找到匹配的模板</p>
-              <span>试试其他关键词或分类</span>
-            </div>
-          ) : (
-            <div className="tl-grid">
-              {filteredTemplates.map((template) => {
-                const Icon = ICON_MAP[template.icon] || Layout;
-                const isHovered = hoveredId === template.id;
-                const isProject = template.type === 'project';
+          {/* Type filter (page vs project) */}
+          <div className="tl-type-filter">
+            <button
+              className={`tl-type-btn${typeFilter === 'all' ? ' active' : ''}`}
+              onClick={() => setTypeFilter('all')}
+            >
+              全部 <span className="tl-type-count">{allTemplates.length}</span>
+            </button>
+            <button
+              className={`tl-type-btn${typeFilter === 'project' ? ' active' : ''}`}
+              onClick={() => setTypeFilter('project')}
+            >
+              <Layers size={12} /> 完整项目 <span className="tl-type-count">{projectCount}</span>
+            </button>
+            <button
+              className={`tl-type-btn${typeFilter === 'page' ? ' active' : ''}`}
+              onClick={() => setTypeFilter('page')}
+            >
+              <FileText size={12} /> 单页面 <span className="tl-type-count">{pageCount}</span>
+            </button>
+          </div>
 
-                return (
-                  <div
-                    key={template.id}
-                    className={`tl-card${isHovered ? ' hovered' : ''}${isProject ? ' project' : ''}`}
-                    onClick={() => handleSelect(template)}
-                    onMouseEnter={() => setHoveredId(template.id)}
-                    onMouseLeave={() => setHoveredId(null)}
-                    role="button"
-                    tabIndex={0}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' || e.key === ' ') {
-                        e.preventDefault();
-                        handleSelect(template);
-                      }
-                    }}
-                  >
-                    {/* Type badge */}
-                    {isProject && (
-                      <div className="tl-badge-project">
-                        <Layers size={10} />
-                        {template.pageCount || '?'} 页
-                      </div>
-                    )}
+          {/* Category tabs */}
+          <div className="tl-categories">
+            {categories.map(({ key, label, icon: Icon }) => {
+              let count;
+              if (key === 'all') count = allTemplates.length;
+              else if (key === 'custom') count = customTemplates.length;
+              else count = allTemplates.filter(t => t.category === key && !t.isCustom).length + (key === customTemplates[0]?.category ? 0 : 0);
+              // Recalculate properly
+              if (key === 'custom') count = customTemplates.length;
+              else if (key === 'all') count = allTemplates.length;
+              else count = BUILTIN_TEMPLATES.filter(t => t.category === key).length;
+              if (count === 0 && key !== 'all') return null;
+              return (
+                <button
+                  key={key}
+                  className={`tl-cat-tab${activeCategory === key ? ' active' : ''}`}
+                  onClick={() => setActiveCategory(key)}
+                >
+                  <Icon size={13} />
+                  <span>{label}</span>
+                  {count > 0 && <span className="tl-cat-count">{count}</span>}
+                </button>
+              );
+            })}
+          </div>
 
-                    {/* Icon + Title */}
-                    <div className="tl-card-top">
-                      <div className="tl-card-icon">
-                        <Icon size={18} />
+          {/* Template grid */}
+          <div className="tl-body">
+            {filteredTemplates.length === 0 ? (
+              <div className="tl-empty">
+                <Search size={28} style={{ opacity: 0.3 }} />
+                <p>未找到匹配的模板</p>
+                <span>试试其他关键词或分类</span>
+              </div>
+            ) : (
+              <div className="tl-grid">
+                {filteredTemplates.map((template) => {
+                  const Icon = ICON_MAP[template.icon] || Layout;
+                  const isHovered = hoveredId === template.id;
+                  const isProject = template.type === 'project';
+                  const isSelected = selectedTemplate?.id === template.id;
+
+                  return (
+                    <div
+                      key={template.id}
+                      className={`tl-card${isHovered ? ' hovered' : ''}${isProject ? ' project' : ''}${isSelected ? ' selected' : ''}${template.isCustom ? ' custom' : ''}`}
+                      onClick={() => handleCardClick(template)}
+                      onMouseEnter={() => setHoveredId(template.id)}
+                      onMouseLeave={() => setHoveredId(null)}
+                      role="button"
+                      tabIndex={0}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          handleCardClick(template);
+                        }
+                      }}
+                    >
+                      {/* Type badge */}
+                      {isProject && (
+                        <div className="tl-badge-project">
+                          <Layers size={10} />
+                          {template.pageCount || '?'} 页
+                        </div>
+                      )}
+
+                      {/* Custom badge */}
+                      {template.isCustom && (
+                        <div className="tl-badge-custom">
+                          <Star size={10} />
+                          自定义
+                        </div>
+                      )}
+
+                      {/* Icon + Title */}
+                      <div className="tl-card-top">
+                        <div className="tl-card-icon">
+                          <Icon size={18} />
+                        </div>
+                        <div className="tl-card-info">
+                          <span className="tl-card-name">{template.name}</span>
+                          <span className="tl-card-category">{template.category}</span>
+                        </div>
                       </div>
-                      <div className="tl-card-info">
-                        <span className="tl-card-name">{template.name}</span>
-                        <span className="tl-card-category">{template.category}</span>
-                      </div>
+
+                      {/* Description */}
+                      <p className="tl-card-desc">{template.description}</p>
+
+                      {/* Tags */}
+                      {template.tags?.length > 0 && (
+                        <div className="tl-card-tags">
+                          {template.tags.slice(0, 3).map(tag => (
+                            <span key={tag} className="tl-tag">{tag}</span>
+                          ))}
+                        </div>
+                      )}
                     </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
 
-                    {/* Description */}
-                    <p className="tl-card-desc">{template.description}</p>
+          {/* Footer */}
+          <div className="tl-footer">
+            <Layout size={12} />
+            <span>点击模板查看详情，确认后使用</span>
+          </div>
+        </div>
 
-                    {/* Tags */}
-                    {template.tags?.length > 0 && (
-                      <div className="tl-card-tags">
-                        {template.tags.slice(0, 3).map(tag => (
-                          <span key={tag} className="tl-tag">{tag}</span>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
+        {/* Right: Detail preview panel */}
+        {selectedTemplate && (
+          <TemplateDetail
+            template={selectedTemplate}
+            onUse={handleConfirmSelect}
+            onClose={() => setSelectedTemplate(null)}
+            onDelete={selectedTemplate.isCustom && onDeleteCustomTemplate
+              ? () => { onDeleteCustomTemplate(selectedTemplate.id); setSelectedTemplate(null); }
+              : null
+            }
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Template Detail Panel ──────────────────────────────
+
+function TemplateDetail({ template, onUse, onClose, onDelete }) {
+  const Icon = ICON_MAP[template.icon] || Layout;
+  const isProject = template.type === 'project';
+  const projectPages = isProject ? parseProjectPages(template.prompt) : [];
+
+  return (
+    <div className="tl-detail">
+      {/* Detail header */}
+      <div className="tl-detail-header">
+        <button className="tl-detail-back" onClick={onClose} title="返回列表">
+          <X size={16} />
+        </button>
+        <span className="tl-detail-header-title">模板详情</span>
+      </div>
+
+      {/* Detail body */}
+      <div className="tl-detail-body">
+        {/* Icon + name */}
+        <div className="tl-detail-hero">
+          <div className="tl-detail-icon">
+            <Icon size={28} />
+          </div>
+          <div className="tl-detail-info">
+            <h3 className="tl-detail-name">{template.name}</h3>
+            <div className="tl-detail-meta">
+              <span className="tl-detail-category">{template.category}</span>
+              {isProject && (
+                <span className="tl-detail-page-count">
+                  <Layers size={11} />
+                  {template.pageCount || projectPages.length} 个页面
+                </span>
+              )}
+              {template.isCustom && (
+                <span className="tl-detail-custom-badge">
+                  <Star size={10} />
+                  自定义模板
+                </span>
+              )}
             </div>
-          )}
+          </div>
         </div>
 
-        {/* Footer */}
-        <div className="tl-footer">
-          <Layout size={12} />
-          <span>选择模板后，AI 将根据模板描述自动生成原型</span>
+        {/* Description */}
+        <div className="tl-detail-section">
+          <span className="tl-detail-label">描述</span>
+          <p className="tl-detail-desc">{template.description}</p>
         </div>
+
+        {/* Tags */}
+        {template.tags?.length > 0 && (
+          <div className="tl-detail-section">
+            <span className="tl-detail-label">标签</span>
+            <div className="tl-detail-tags">
+              {template.tags.map(tag => (
+                <span key={tag} className="tl-detail-tag">{tag}</span>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Project page list */}
+        {isProject && projectPages.length > 0 && (
+          <div className="tl-detail-section">
+            <span className="tl-detail-label">包含页面 ({projectPages.length})</span>
+            <div className="tl-detail-pages">
+              {projectPages.map((page, i) => (
+                <div key={i} className="tl-detail-page-item">
+                  <span className="tl-detail-page-num">{page.num}</span>
+                  <div className="tl-detail-page-info">
+                    <span className="tl-detail-page-name">{page.name}</span>
+                    {page.desc && <span className="tl-detail-page-desc">{page.desc}</span>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Full prompt preview */}
+        <div className="tl-detail-section">
+          <span className="tl-detail-label">生成指令预览</span>
+          <div className="tl-detail-prompt">
+            {template.prompt}
+          </div>
+        </div>
+      </div>
+
+      {/* Detail footer — actions */}
+      <div className="tl-detail-footer">
+        {onDelete && (
+          <button className="tl-detail-delete" onClick={onDelete} title="删除此模板">
+            <Trash2 size={14} />
+            <span>删除</span>
+          </button>
+        )}
+        <button className="tl-detail-use-btn" onClick={onUse}>
+          <ArrowRight size={15} />
+          使用此模板
+        </button>
       </div>
     </div>
   );

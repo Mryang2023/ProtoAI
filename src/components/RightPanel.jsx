@@ -55,6 +55,7 @@ export default function RightPanel({
   rightViewMode = 'prototype', wireframeHtmls = [],
   onViewModeChange,
   streamingHtml = '',
+  streamingPageIndex = null,
   planningStreamText = '',
   planningDiscoveredPages = [],
   planningPhase = '',
@@ -118,6 +119,17 @@ export default function RightPanel({
   useEffect(() => {
     if (!isGenerating) setUserPreviewIndex(null);
   }, [isGenerating]);
+
+  // ── Camera follow: auto-scroll page nav to streaming page ──
+  const pageNavRef = useRef(null);
+  useEffect(() => {
+    if (isGenerating && streamingPageIndex !== null && userPreviewIndex === null && pageNavRef.current) {
+      const streamingTab = pageNavRef.current.querySelector('.page-nav-tab.streaming');
+      if (streamingTab) {
+        streamingTab.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
+      }
+    }
+  }, [isGenerating, streamingPageIndex, userPreviewIndex]);
 
   // Reset plan page index when plannedPages changes
   useEffect(() => {
@@ -264,7 +276,9 @@ export default function RightPanel({
               </div>
               <span className="compact-progress-text">
                 {progressCurrent}/{progressTotal} {progress || '准备中...'}
-                {streamingHtml && !userPreviewIndex && <span style={{ color: '#22c55e', marginLeft: 8 }}>● 实时预览中</span>}
+                {streamingHtml && userPreviewIndex === null && streamingPageIndex !== null && (
+                  <span style={{ color: '#22c55e', marginLeft: 8 }}>● 正在生成第 {streamingPageIndex + 1} 页</span>
+                )}
               </span>
               {userPreviewIndex !== null && (
                 <button className="compact-progress-back" onClick={() => setUserPreviewIndex(null)}>
@@ -361,20 +375,22 @@ export default function RightPanel({
 
           {/* Page navigation */}
           {(pages.filter((p) => p?.html).length > 1 || (isGenerating && plannedPages && plannedPages.length > 1)) && (
-            <div className="page-nav">
+            <div className="page-nav" ref={pageNavRef}>
               {(plannedPages || pages).map((page, i) => {
                 if (!page) return null;
                 const pageData = pages[i];
                 const isDone = pageData?.html && !pageData?.error;
-                const isCurrent = isGenerating && userPreviewIndex !== null
-                  ? i === userPreviewIndex
+                const isStreamingNow = isGenerating && streamingPageIndex === i && !isDone;
+                const isCurrent = isGenerating
+                  ? (userPreviewIndex !== null ? i === userPreviewIndex : isStreamingNow)
                   : i === currentPageIndex;
                 return (
                   <button key={`nav-${page.name || page.route}-${i}`}
-                    className={`page-nav-tab${isCurrent ? ' active' : ''}${pageData?.error ? ' has-error' : ''}`}
+                    className={`page-nav-tab${isCurrent ? ' active' : ''}${pageData?.error ? ' has-error' : ''}${isStreamingNow ? ' streaming' : ''}`}
                     onClick={() => isDone && handleSelectPage(i)}
                     disabled={isGenerating && !isDone}
                     title={page.description || page.name}>
+                    {isStreamingNow && <span className="page-nav-streaming-dot" />}
                     <span className="page-nav-name">{page.name}</span>
                     {isDone && <CheckCircle2 size={11} className="page-nav-done" />}
                     {pageData?.error && <AlertCircle size={12} className="page-nav-error" />}

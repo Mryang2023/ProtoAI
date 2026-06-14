@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import {
   X, Search, ShoppingBag, BarChart3, Users, Settings, MessageCircle,
   User, MessageSquare, Rocket, Building2, CreditCard, BookOpen,
@@ -294,6 +294,172 @@ function parseProjectPages(prompt) {
   return pages;
 }
 
+// ── Template Wireframe Preview Generator ─────────────
+
+function wfNav(name, isMobile) {
+  if (isMobile) return `<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:#fafafa;border-bottom:1px solid #eee"><span style="font-size:13px;font-weight:700;color:#444;display:flex;align-items:center;gap:6px"><span style="width:22px;height:22px;border-radius:5px;background:linear-gradient(135deg,#c7d2fe,#a5b4fc);display:inline-block"></span>${name}</span><div style="display:flex;gap:10px"><span style="width:18px;height:18px;border-radius:50%;background:#e8e8e8"></span><span style="width:18px;height:18px;border-radius:50%;background:#e8e8e8"></span></div></div>`;
+  return `<div style="display:flex;align-items:center;justify-content:space-between;padding:12px 28px;background:#fafafa;border-bottom:1px solid #eee"><span style="font-size:14px;font-weight:700;color:#444;display:flex;align-items:center;gap:8px"><span style="width:26px;height:26px;border-radius:6px;background:linear-gradient(135deg,#c7d2fe,#a5b4fc);display:inline-block"></span>${name}</span><div style="display:flex;gap:18px;align-items:center"><span style="font-size:12px;color:#888">首页</span><span style="font-size:12px;color:#888">功能</span><span style="font-size:12px;color:#888">关于</span><span style="font-size:11px;color:#fff;background:#a5b4fc;padding:4px 12px;border-radius:5px">操作</span></div></div>`;
+}
+
+function wfHero(title, isMobile) {
+  return `<div style="display:flex;flex-direction:${isMobile ? 'column' : 'row'};gap:${isMobile ? '14px' : '28px'};align-items:center;padding:${isMobile ? '22px 14px' : '36px 28px'};background:linear-gradient(135deg,#f0f0ff,#f8f8ff);border-radius:10px;margin-bottom:20px"><div style="flex:1"><div style="font-size:${isMobile ? '18px' : '24px'};font-weight:700;color:#333;margin-bottom:6px;line-height:1.3">${title}</div><div style="height:8px;background:#e0e0e0;border-radius:4px;width:85%;margin-bottom:5px"></div><div style="height:8px;background:#e8e8e8;border-radius:4px;width:65%;margin-bottom:14px"></div><div style="display:flex;gap:8px"><span style="padding:7px 16px;background:#a5b4fc;color:#fff;border-radius:6px;font-size:11px">主要按钮</span><span style="padding:7px 16px;background:#f1f5f9;color:#666;border-radius:6px;font-size:11px;border:1px solid #ddd">次要</span></div></div><div style="width:${isMobile ? '100%' : '220px'};height:${isMobile ? '110px' : '150px'};background:#e8e8e8;border-radius:8px;flex-shrink:0;position:relative;overflow:hidden"><div style="position:absolute;width:200%;height:1px;background:#d4d4d4;top:50%;left:-50%;transform:rotate(25deg)"></div><div style="position:absolute;width:200%;height:1px;background:#d4d4d4;top:50%;left:-50%;transform:rotate(-25deg)"></div></div></div>`;
+}
+
+function wfSearch(isMobile) {
+  return `<div style="display:flex;align-items:center;gap:7px;padding:${isMobile ? '7px 10px' : '9px 14px'};border:1px solid #ddd;border-radius:8px;background:#fafafa;margin-bottom:14px"><span style="color:#bbb;font-size:13px">🔍</span><span style="font-size:12px;color:#bbb">搜索...</span></div>`;
+}
+
+function wfStats(labels, isMobile) {
+  const values = ['1,234', '567', '89.2%', '¥12.3万'];
+  const cols = isMobile ? 'repeat(2,1fr)' : `repeat(${Math.min(labels.length, 4)},1fr)`;
+  return `<div style="display:grid;grid-template-columns:${cols};gap:${isMobile ? '7px' : '12px'};margin-bottom:20px">${labels.map((l, i) => `<div style="padding:${isMobile ? '10px' : '16px'};border:1px solid #eee;border-radius:8px;background:#fafafa;text-align:center"><div style="font-size:${isMobile ? '18px' : '24px'};font-weight:700;color:#a5b4fc;margin-bottom:3px">${values[i % values.length]}</div><div style="font-size:${isMobile ? '10px' : '11px'};color:#999">${l}</div></div>`).join('')}</div>`;
+}
+
+function wfCards(count, isMobile, titlePrefix) {
+  const cols = isMobile ? 'repeat(2,1fr)' : 'repeat(3,1fr)';
+  return `<div style="display:grid;grid-template-columns:${cols};gap:${isMobile ? '8px' : '12px'};margin-bottom:20px">${Array.from({ length: count }, (_, i) => `<div style="border:1px solid #eee;border-radius:8px;overflow:hidden;background:#fff"><div style="width:100%;height:${isMobile ? '65px' : '90px'};background:#eaeaea;position:relative;overflow:hidden"><div style="position:absolute;width:200%;height:1px;background:#d8d8d8;top:50%;left:-50%;transform:rotate(25deg)"></div></div><div style="padding:${isMobile ? '8px' : '10px'}"><div style="font-size:${isMobile ? '11px' : '12px'};font-weight:600;color:#444;margin-bottom:3px">${titlePrefix || '项目'} ${i + 1}</div><div style="height:6px;background:#eee;border-radius:3px;width:80%;margin-bottom:3px"></div><div style="height:6px;background:#f0f0f0;border-radius:3px;width:55%"></div></div></div>`).join('')}</div>`;
+}
+
+function wfTable(isMobile) {
+  if (isMobile) return `<div style="margin-bottom:20px">${[1, 2, 3, 4].map(i => `<div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid #f0f0f0"><div style="width:32px;height:32px;border-radius:50%;background:#e8e8e8;flex-shrink:0"></div><div style="flex:1"><div style="font-size:12px;font-weight:500;color:#444;margin-bottom:2px">列表项 ${i}</div><div style="font-size:10px;color:#aaa">描述信息 · 辅助文字</div></div><span style="font-size:10px;color:#a5b4fc">操作</span></div>`).join('')}</div>`;
+  return `<table style="width:100%;border-collapse:collapse;margin-bottom:20px"><thead><tr>${['名称', '状态', '更新时间', '操作'].map(h => `<th style="font-size:10px;color:#888;font-weight:600;text-align:left;padding:7px 10px;background:#f8f8f8;border-bottom:1px solid #eee">${h}</th>`).join('')}</tr></thead><tbody>${[1, 2, 3, 4].map(i => `<tr>${['名称', '状态', '时间', '操作'].map((_, ci) => `<td style="font-size:10px;color:#aaa;padding:8px 10px;border-bottom:1px solid #f0f0f0">${ci === 3 ? '<span style="color:#a5b4fc">操作</span>' : `数据 ${i}-${ci + 1}`}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
+}
+
+function wfForm(fields, isMobile) {
+  return `<div style="max-width:${isMobile ? '100%' : '380px'};margin-bottom:20px">${fields.map(f => `<div style="margin-bottom:12px"><div style="font-size:11px;color:#666;font-weight:500;margin-bottom:4px">${f}</div><div style="width:100%;height:34px;border:1px solid #ddd;border-radius:7px;padding:0 10px;background:#fafafa;font-size:11px;color:#bbb;display:flex;align-items:center">请输入${f}</div></div>`).join('')}<div style="display:flex;gap:8px;margin-top:4px"><span style="padding:8px 18px;background:#a5b4fc;color:#fff;border-radius:7px;font-size:12px">提交</span><span style="padding:8px 18px;background:#f1f5f9;color:#666;border-radius:7px;font-size:12px;border:1px solid #ddd">取消</span></div></div>`;
+}
+
+function wfList(count, isMobile) {
+  return `<div style="margin-bottom:20px">${Array.from({ length: count }, (_, i) => `<div style="display:flex;align-items:center;gap:10px;padding:${isMobile ? '8px 0' : '11px 0'};border-bottom:1px solid #f0f0f0"><div style="width:${isMobile ? '34px' : '38px'};height:${isMobile ? '34px' : '38px'};border-radius:50%;background:#e8e8e8;flex-shrink:0"></div><div style="flex:1"><div style="font-size:${isMobile ? '12px' : '13px'};font-weight:500;color:#444;margin-bottom:2px">列表项 ${i + 1}</div><div style="font-size:${isMobile ? '9px' : '10px'};color:#aaa">描述信息 · 辅助文字 · 时间</div></div><span style="font-size:10px;color:#a5b4fc;flex-shrink:0">→</span></div>`).join('')}</div>`;
+}
+
+function wfBanner(text, isMobile) {
+  return `<div style="padding:${isMobile ? '18px 14px' : '26px 24px'};background:linear-gradient(135deg,#e8e8ff,#f0f0ff);border-radius:10px;margin-bottom:20px;text-align:center"><div style="font-size:${isMobile ? '16px' : '20px'};font-weight:700;color:#444;margin-bottom:5px">${text || 'Banner 广告区'}</div><div style="height:7px;background:#d8d8e8;border-radius:4px;width:55%;margin:0 auto"></div></div>`;
+}
+
+function wfPricing(isMobile) {
+  const tiers = ['免费版', '专业版', '企业版'];
+  return `<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:${isMobile ? '6px' : '12px'};margin-bottom:20px">${tiers.map((t, i) => `<div style="border:1px solid ${i === 1 ? '#a5b4fc' : '#eee'};border-radius:10px;padding:${isMobile ? '12px 8px' : '18px 14px'};text-align:center;${i === 1 ? 'transform:scale(1.03);box-shadow:0 4px 16px rgba(99,102,241,0.1)' : ''}"><div style="font-size:${isMobile ? '11px' : '12px'};font-weight:600;color:#666;margin-bottom:6px">${t}</div><div style="font-size:${isMobile ? '18px' : '24px'};font-weight:700;color:#333;margin-bottom:10px">${['¥0', '¥99', '¥299'][i]}<span style="font-size:10px;color:#aaa">/月</span></div>${['功能A', '功能B', '功能C'].map(f => `<div style="font-size:10px;color:#888;padding:3px 0">${f} ✓</div>`).join('')}<div style="margin-top:10px;padding:6px 12px;background:${i === 1 ? '#a5b4fc' : '#f1f5f9'};color:${i === 1 ? '#fff' : '#666'};border-radius:6px;font-size:11px">选择</div></div>`).join('')}</div>`;
+}
+
+function wfError404(isMobile) {
+  return `<div style="text-align:center;padding:${isMobile ? '36px 14px' : '56px 24px'}};margin-bottom:20px"><div style="font-size:${isMobile ? '48px' : '64px'};font-weight:900;background:linear-gradient(135deg,#a5b4fc,#c7d2fe);-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:10px">404</div><div style="font-size:${isMobile ? '16px' : '18px'};font-weight:600;color:#444;margin-bottom:6px">页面未找到</div><div style="font-size:12px;color:#999;margin-bottom:18px">抱歉，您访问的页面不存在</div><div style="display:flex;gap:7px;justify-content:center;align-items:center"><div style="padding:7px 14px;border:1px solid #ddd;border-radius:7px;background:#fafafa;font-size:11px;color:#bbb">搜索...</div><span style="padding:7px 14px;background:#a5b4fc;color:#fff;border-radius:7px;font-size:11px">返回首页</span></div></div>`;
+}
+
+function wfChat(isMobile) {
+  return `<div style="display:flex;gap:0;height:${isMobile ? '340px' : '380px'};border:1px solid #eee;border-radius:10px;overflow:hidden;margin-bottom:20px"><div style="width:${isMobile ? '90px' : '150px'};border-right:1px solid #eee;background:#fafafa;padding:8px;overflow:hidden">${[1, 2, 3, 4, 5].map(i => `<div style="display:flex;align-items:center;gap:5px;padding:6px;border-radius:6px;margin-bottom:3px;${i === 1 ? 'background:#f0f0ff' : ''}"><div style="width:22px;height:22px;border-radius:50%;background:#e0e0e0;flex-shrink:0"></div><div style="min-width:0;flex:1"><div style="font-size:9px;font-weight:500;color:#444;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">用户${i}</div><div style="font-size:8px;color:#aaa;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">最近消息...</div></div>${i <= 2 ? '<span style="width:12px;height:12px;border-radius:50%;background:#ef4444;color:#fff;font-size:7px;display:flex;align-items:center;justify-content:center;flex-shrink:0">' + i + '</span>' : ''}</div>`).join('')}</div><div style="flex:1;display:flex;flex-direction:column;padding:10px"><div style="display:flex;gap:8px;margin-bottom:10px"><div style="width:24px;height:24px;border-radius:50%;background:#e0e0e0"></div><div style="padding:6px 10px;background:#f0f0ff;border-radius:0 8px 8px 8px;font-size:10px;color:#444;max-width:65%">你好！这是对话消息</div></div><div style="display:flex;gap:8px;margin-bottom:10px;justify-content:flex-end"><div style="padding:6px 10px;background:#a5b4fc;border-radius:8px 0 8px 8px;font-size:10px;color:#fff;max-width:65%">这是回复消息内容</div><div style="width:24px;height:24px;border-radius:50%;background:#c7d2fe"></div></div><div style="flex:1"></div><div style="display:flex;gap:6px;padding-top:8px;border-top:1px solid #eee"><div style="flex:1;height:30px;border:1px solid #ddd;border-radius:7px;background:#fafafa;font-size:10px;color:#bbb;padding:0 8px;display:flex;align-items:center">输入消息...</div><span style="padding:0 10px;background:#a5b4fc;color:#fff;border-radius:7px;font-size:10px;display:flex;align-items:center">发送</span></div></div></div>`;
+}
+
+function wfTabs(tabs, isMobile) {
+  return `<div style="display:flex;border-bottom:1px solid #eee;margin-bottom:14px;overflow-x:auto">${tabs.map((t, i) => `<div style="padding:7px 13px;font-size:${isMobile ? '11px' : '12px'};color:${i === 0 ? '#555' : '#888'};border-bottom:2px solid ${i === 0 ? '#6366f1' : 'transparent'};font-weight:${i === 0 ? '600' : '400'};white-space:nowrap;flex-shrink:0">${t}</div>`).join('')}</div>`;
+}
+
+function wfSidebarLayout(name, isMobile, content) {
+  if (isMobile) return content;
+  return `<div style="display:flex;gap:0;min-height:380px"><div style="width:160px;background:#fafafa;border-right:1px solid #eee;padding:14px 10px;flex-shrink:0"><div style="font-size:13px;font-weight:700;color:#444;margin-bottom:14px;display:flex;align-items:center;gap:6px"><span style="width:22px;height:22px;border-radius:5px;background:linear-gradient(135deg,#c7d2fe,#a5b4fc);display:inline-block"></span>${name}</div>${['仪表盘', '用户管理', '内容', '设置'].map((m, i) => `<div style="padding:6px 10px;border-radius:6px;font-size:11px;color:${i === 0 ? '#555' : '#888'};background:${i === 0 ? '#f0f0ff' : 'transparent'};margin-bottom:2px;font-weight:${i === 0 ? '600' : '400'}">${m}</div>`).join('')}</div><div style="flex:1;padding:18px">${content}</div></div>`;
+}
+
+function wfFooter(isMobile) {
+  return `<div style="padding:${isMobile ? '14px' : '20px 28px'};border-top:1px solid #eee;text-align:center;font-size:10px;color:#bbb">© ProtoAI Wireframe · 仅用于方案预览</div>`;
+}
+
+function wfTabBar() {
+  return `<div style="display:flex;justify-content:space-around;align-items:center;padding:7px 0 10px;border-top:1px solid #eee;background:#fff">${['首页', '发现', '消息', '我的'].map((l, i) => `<div style="display:flex;flex-direction:column;align-items:center;gap:2px"><div style="width:18px;height:18px;border-radius:4px;background:${i === 0 ? '#c7d2fe' : '#e8e8e8'}"></div><span style="font-size:8px;color:${i === 0 ? '#6366f1' : '#aaa'}">${l}</span></div>`).join('')}</div>`;
+}
+
+function wfProductCards(count, isMobile) {
+  const cols = isMobile ? 'repeat(2,1fr)' : 'repeat(4,1fr)';
+  return `<div style="display:grid;grid-template-columns:${cols};gap:${isMobile ? '8px' : '12px'};margin-bottom:20px">${Array.from({ length: count }, (_, i) => {
+    const prices = ['¥99', '¥199', '¥299', '¥399', '¥59', '¥149', '¥249', '¥349'];
+    return `<div style="border:1px solid #eee;border-radius:8px;overflow:hidden;background:#fff"><div style="width:100%;height:${isMobile ? '80px' : '110px'};background:#eaeaea;position:relative;overflow:hidden"><div style="position:absolute;width:200%;height:1px;background:#d8d8d8;top:50%;left:-50%;transform:rotate(25deg)"></div></div><div style="padding:${isMobile ? '8px' : '10px'}"><div style="font-size:${isMobile ? '11px' : '12px'};font-weight:500;color:#444;margin-bottom:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">商品名称 ${i + 1}</div><div style="display:flex;align-items:baseline;gap:4px"><span style="font-size:${isMobile ? '14px' : '16px'};font-weight:700;color:#ef4444">${prices[i % prices.length]}</span><span style="font-size:9px;color:#bbb;text-decoration:line-through">¥999</span></div><div style="font-size:9px;color:#aaa;margin-top:2px">已售 ${Math.floor(Math.random() * 900 + 100)}</div></div></div>`;
+  }).join('')}</div>`;
+}
+
+function wfCategoryIcons(labels, isMobile) {
+  const count = isMobile ? Math.min(labels.length, 5) : Math.min(labels.length, 8);
+  return `<div style="display:flex;gap:${isMobile ? '10px' : '14px'};margin-bottom:20px;overflow-x:auto;padding-bottom:4px">${labels.slice(0, count).map(l => `<div style="display:flex;flex-direction:column;align-items:center;gap:5px;flex-shrink:0"><div style="width:${isMobile ? '42px' : '48px'};height:${isMobile ? '42px' : '48px'};border-radius:${isMobile ? '10px' : '12px'};background:#f5f5ff;border:1px solid #eee;display:flex;align-items:center;justify-content:center"><div style="width:18px;height:18px;border-radius:4px;background:#c7d2fe"></div></div><span style="font-size:${isMobile ? '9px' : '10px'};color:#666;white-space:nowrap">${l}</span></div>`).join('')}</div>`;
+}
+
+function wfCourseCards(count, isMobile) {
+  const cols = isMobile ? 'repeat(2,1fr)' : 'repeat(3,1fr)';
+  return `<div style="display:grid;grid-template-columns:${cols};gap:${isMobile ? '8px' : '12px'};margin-bottom:20px">${Array.from({ length: count }, (_, i) => `<div style="border:1px solid #eee;border-radius:8px;overflow:hidden;background:#fff"><div style="width:100%;height:${isMobile ? '70px' : '100px'};background:linear-gradient(135deg,#e8e8ff,#f0e8ff);position:relative"><div style="position:absolute;bottom:6px;left:8px;padding:2px 6px;background:rgba(0,0,0,0.5);border-radius:3px;font-size:8px;color:#fff">12课时</div></div><div style="padding:${isMobile ? '8px' : '10px'}"><div style="font-size:${isMobile ? '11px' : '12px'};font-weight:600;color:#444;margin-bottom:3px">课程名称 ${i + 1}</div><div style="display:flex;align-items:center;gap:4px;margin-bottom:3px"><div style="width:14px;height:14px;border-radius:50%;background:#e0e0e0"></div><span style="font-size:9px;color:#aaa">讲师名</span></div><div style="display:flex;align-items:center;justify-content:space-between"><span style="font-size:12px;font-weight:700;color:#ef4444">¥${(i + 1) * 49}</span><span style="font-size:8px;color:#aaa">${Math.floor(Math.random() * 9000 + 1000)}人学</span></div></div></div>`).join('')}</div>`;
+}
+
+function wfMap(isMobile) {
+  return `<div style="width:100%;height:${isMobile ? '120px' : '180px'};background:#f0f0f0;border-radius:10px;margin-bottom:20px;display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden;border:1px solid #eee"><div style="position:absolute;inset:0;background:linear-gradient(135deg,#e8f4e8 0%,#f0f0ff 50%,#e8e8ff 100%);opacity:0.5"></div><div style="width:28px;height:28px;border-radius:50% 50% 50% 0;background:#ef4444;transform:rotate(-45deg);position:relative;z-index:1"><div style="width:10px;height:10px;border-radius:50%;background:#fff;position:absolute;top:9px;left:9px"></div></div></div>`;
+}
+
+function wfProgressBars(items, isMobile) {
+  return `<div style="margin-bottom:20px">${items.map(item => `<div style="margin-bottom:10px"><div style="display:flex;justify-content:space-between;font-size:11px;color:#666;margin-bottom:4px"><span>${item}</span><span style="color:#a5b4fc;font-weight:600">${Math.floor(Math.random() * 60 + 30)}%</span></div><div style="width:100%;height:6px;background:#eee;border-radius:3px"><div style="width:${Math.floor(Math.random() * 60 + 30)}%;height:100%;background:linear-gradient(90deg,#a5b4fc,#c7d2fe);border-radius:3px"></div></div></div>`).join('')}</div>`;
+}
+
+// Template-specific wireframe configurations
+const TEMPLATE_WIREFRAMES = {
+  'ecommerce-home': (m) => [wfNav('电商平台', m), wfSearch(m), wfBanner('限时特惠 · 全场5折起', m), wfCategoryIcons(['女装', '男装', '数码', '美妆', '食品', '家居', '运动', '母婴'], m), wfProductCards(m ? 4 : 8, m), wfList(3, m), wfFooter(m)],
+  'ecommerce-product-list': (m) => [wfNav('商品列表', m), wfSearch(m), wfTabs(['综合', '销量', '价格', '新品'], m), wfProductCards(m ? 4 : 6, m), wfFooter(m)],
+  'ecommerce-product-detail': (m) => [wfNav('商品详情', m), wfHero('商品名称 · 高品质推荐', m), wfStats(['价格', '销量', '评分', '库存'], m), wfTabs(['商品介绍', '规格参数', '评价'], m), wfList(3, m), wfFooter(m)],
+  'ecommerce-cart': (m) => [wfNav('购物车', m), wfTable(m), wfStats(['商品总数', '优惠', '运费', '合计'], m), wfFooter(m)],
+  'ecommerce-order': (m) => [wfNav('订单确认', m), wfHero('订单提交成功', m), wfForm(['收货地址', '联系电话', '配送方式'], m), wfTable(m), wfFooter(m)],
+  'ecommerce-system': (m) => [wfNav('电商平台', m), wfSearch(m), wfBanner('Banner 广告', m), wfCategoryIcons(['分类1', '分类2', '分类3', '分类4'], m), wfProductCards(m ? 4 : 6, m), wfList(3, m), wfFooter(m)],
+  'saas-dashboard': (m) => [wfSidebarLayout('管理后台', m, [wfStats(['总用户', '活跃用户', '转化率', '总收入'], m), wfCards(m ? 2 : 3, m, '图表区'), wfTable(m)].join(''))],
+  'saas-user-management': (m) => [wfSidebarLayout('管理后台', m, [wfSearch(m), wfTable(m)].join(''))],
+  'saas-settings': (m) => [wfSidebarLayout('管理后台', m, [wfTabs(['个人资料', '安全设置', '通知', 'API'], m), wfForm(['用户名', '邮箱', '手机号', '个人简介'], m)].join(''))],
+  'saas-login': (m) => [wfHero('欢迎登录', m), wfForm(['邮箱', '密码'], m)],
+  'saas-admin-system': (m) => [wfSidebarLayout('管理后台', m, [wfStats(['总用户', '活跃用户', '转化率', '总收入'], m), wfCards(m ? 2 : 3, m, '图表区'), wfTable(m)].join(''))],
+  'social-feed': (m) => [wfNav('社交平台', m), wfSearch(m), wfCards(m ? 3 : 6, m, '帖子'), wfFooter(m)],
+  'social-profile': (m) => [wfNav('个人主页', m), wfHero('用户昵称', m), wfStats(['帖子', '粉丝', '关注'], m), wfTabs(['帖子', '回复', '媒体', '喜欢'], m), wfCards(m ? 4 : 6, m, '内容'), wfFooter(m)],
+  'social-chat': (m) => [wfNav('消息', m), wfChat(m)],
+  'social-blog': (m) => [wfNav('博客平台', m), wfSearch(m), wfBanner('精选文章', m), wfCards(m ? 4 : 6, m, '文章'), wfFooter(m)],
+  'edu-home': (m) => [wfNav('在线教育', m), wfHero('学习改变未来', m), wfCategoryIcons(['编程', '设计', '语言', '商业', '科学'], m), wfCourseCards(m ? 4 : 6, m), wfList(3, m), wfFooter(m)],
+  'edu-course-detail': (m) => [wfNav('课程详情', m), wfHero('课程名称 · 从零到精通', m), wfStats(['学习人数', '课时', '评分', '证书'], m), wfTabs(['介绍', '大纲', '评价'], m), wfList(5, m), wfFooter(m)],
+  'edu-learning': (m) => [wfNav('学习中心', m), wfStats(['今日学习', '连续天数', '已完成', '证书'], m), wfProgressBars(['前端开发', 'UI设计', '数据结构'], m), wfCourseCards(m ? 2 : 3, m), wfFooter(m)],
+  'edu-system': (m) => [wfNav('在线教育', m), wfHero('开启学习之旅', m), wfCategoryIcons(['编程', '设计', '语言', '商业'], m), wfCourseCards(m ? 4 : 6, m), wfList(3, m), wfFooter(m)],
+  'corp-landing': (m) => [wfNav('产品名称', m), wfHero('让工作更高效', m), wfStats(['客户数', '项目数', '满意度', '合作伙伴'], m), wfCards(m ? 3 : 6, m, '功能'), wfPricing(m), wfFooter(m)],
+  'corp-about': (m) => [wfNav('关于我们', m), wfBanner('公司 Slogan', m), wfCards(m ? 3 : 4, m, '价值观'), wfStats(['成立年数', '客户数', '项目数', '员工数'], m), wfList(4, m), wfFooter(m)],
+  'corp-pricing': (m) => [wfNav('定价', m), wfPricing(m), wfTable(m), wfFooter(m)],
+  'corp-404': (m) => [wfNav('网站名称', m), wfError404(m), wfFooter(m)],
+  'corp-website': (m) => [wfNav('企业名称', m), wfHero('企业数字化转型解决方案', m), wfStats(['客户数', '项目数', '满意度', '年营收'], m), wfCards(m ? 3 : 6, m, '方案'), wfFooter(m)],
+  'finance-home': (m) => [wfNav('金融理财', m), wfStats(['总资产', '今日收益', '收益率', '持仓'], m), wfCategoryIcons(['充值', '提现', '转账', '理财'], m), wfCards(m ? 3 : 4, m, '理财产品'), wfList(3, m), wfFooter(m)],
+  'finance-wallet': (m) => [wfNav('钱包', m), wfStats(['余额', '收入', '支出', '收益'], m), wfCards(m ? 2 : 3, m, '图表'), wfTable(m), wfFooter(m)],
+  'food-menu': (m) => [wfNav('餐厅点餐', m), wfCategoryIcons(['热销', '主食', '小吃', '饮品', '甜点'], m), wfProductCards(m ? 4 : 6, m), wfFooter(m)],
+  'food-home': (m) => [wfNav('美食平台', m), wfSearch(m), wfBanner('今日特惠', m), wfCategoryIcons(['汉堡', '中餐', '烧烤', '奶茶', '甜点'], m), wfCards(m ? 4 : 6, m, '餐厅'), wfFooter(m)],
+  'health-home': (m) => [wfNav('健康管理', m), wfHero('关注健康 从这里开始', m), wfStats(['步数', '心率', '睡眠', '卡路里'], m), wfCategoryIcons(['内科', '外科', '儿科', '妇科'], m), wfList(4, m), wfFooter(m)],
+  'travel-home': (m) => [wfNav('旅游平台', m), wfHero('发现你的下一段旅程', m), wfSearch(m), wfCards(m ? 4 : 6, m, '目的地'), wfList(3, m), wfFooter(m)],
+  'realestate-home': (m) => [wfNav('房产平台', m), wfSearch(m), wfTabs(['新房', '二手房', '租房'], m), wfCards(m ? 4 : 6, m, '楼盘'), wfMap(m), wfList(3, m), wfFooter(m)],
+};
+
+function generateTemplatePreview(template, platform = 'pc') {
+  const isMobile = platform === 'mobile';
+  const W = isMobile ? 375 : 800;
+  const gen = TEMPLATE_WIREFRAMES[template.id];
+  let blocks;
+  if (gen) {
+    blocks = gen(isMobile);
+  } else {
+    blocks = generatePreviewFromPrompt(template, isMobile);
+  }
+  return `<!DOCTYPE html><html><head><meta charset="UTF-8"><style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f5f5f5;color:#333;-webkit-font-smoothing:antialiased}.wc{max-width:${W}px;margin:0 auto;background:#fff;min-height:100vh;${isMobile ? '' : 'box-shadow:0 0 30px rgba(0,0,0,0.05);'}position:relative}.wb{padding:${isMobile ? '14px' : '22px 28px'};${isMobile ? 'padding-bottom:60px;' : ''}}</style></head><body><div class="wc">${blocks.join('')}<div class="wb"></div>${isMobile ? wfTabBar() : ''}</div></body></html>`;
+}
+
+function generatePreviewFromPrompt(template, isMobile) {
+  const blocks = [wfNav(template.name, isMobile)];
+  const p = (template.prompt || '').toLowerCase();
+  if (/hero|banner|首屏|大标题/i.test(p)) blocks.push(wfHero(template.name, isMobile));
+  if (/搜索/i.test(p)) blocks.push(wfSearch(isMobile));
+  if (/banner|轮播|广告/i.test(p)) blocks.push(wfBanner(template.name, isMobile));
+  if (/统计|数据|概览|dashboard|指标/i.test(p)) blocks.push(wfStats(['指标 A', '指标 B', '指标 C', '指标 D'], isMobile));
+  if (/卡片|card|推荐|商品|产品|课程/i.test(p)) blocks.push(wfCards(isMobile ? 4 : 6, isMobile, template.name));
+  if (/表格|table|记录|列表|管理/i.test(p)) blocks.push(wfTable(isMobile));
+  if (/表单|form|登录|注册|设置/i.test(p)) blocks.push(wfForm(['字段 A', '字段 B', '字段 C'], isMobile));
+  if (/聊天|消息|对话|chat/i.test(p)) blocks.push(wfChat(isMobile));
+  if (/定价|pricing|套餐/i.test(p)) blocks.push(wfPricing(isMobile));
+  if (/404|错误/i.test(p)) blocks.push(wfError404(isMobile));
+  if (blocks.length <= 1) { blocks.push(wfHero(template.name, isMobile)); blocks.push(wfCards(isMobile ? 4 : 6, isMobile, '内容')); }
+  blocks.push(wfFooter(isMobile));
+  return blocks;
+}
+
+
 // ── Component ──────────────────────────────────────────
 
 export default function TemplateLibrary({ onSelect, onClose, customTemplates = [], onDeleteCustomTemplate }) {
@@ -302,6 +468,27 @@ export default function TemplateLibrary({ onSelect, onClose, customTemplates = [
   const [hoveredId, setHoveredId] = useState(null);
   const [typeFilter, setTypeFilter] = useState('all'); // 'all' | 'page' | 'project'
   const [selectedTemplate, setSelectedTemplate] = useState(null); // preview detail
+  const [visibleIds, setVisibleIds] = useState(new Set());
+  const gridObserverRef = useRef(null);
+
+  useEffect(() => {
+    gridObserverRef.current = new IntersectionObserver(
+      (entries) => {
+        entries.forEach(entry => {
+          if (entry.isIntersecting) {
+            const id = entry.target.dataset.templateId;
+            if (id) setVisibleIds(prev => new Set([...prev, id]));
+          }
+        });
+      },
+      { rootMargin: '100px' }
+    );
+    return () => gridObserverRef.current?.disconnect();
+  }, []);
+
+  const cardRefCallback = (el) => {
+    if (el && gridObserverRef.current) gridObserverRef.current.observe(el);
+  };
 
   // Merge built-in + custom templates
   const allTemplates = useMemo(() => {
@@ -479,6 +666,7 @@ export default function TemplateLibrary({ onSelect, onClose, customTemplates = [
                   const isHovered = hoveredId === template.id;
                   const isProject = template.type === 'project';
                   const isSelected = selectedTemplate?.id === template.id;
+                  const showPreview = visibleIds.has(template.id);
 
                   return (
                     <div
@@ -487,6 +675,8 @@ export default function TemplateLibrary({ onSelect, onClose, customTemplates = [
                       onClick={() => handleCardClick(template)}
                       onMouseEnter={() => setHoveredId(template.id)}
                       onMouseLeave={() => setHoveredId(null)}
+                      ref={cardRefCallback}
+                      data-template-id={template.id}
                       role="button"
                       tabIndex={0}
                       onKeyDown={(e) => {
@@ -496,6 +686,24 @@ export default function TemplateLibrary({ onSelect, onClose, customTemplates = [
                         }
                       }}
                     >
+                      {/* Wireframe preview thumbnail */}
+                      <div className="tl-card-preview">
+                        {showPreview && (
+                          <iframe
+                            srcDoc={generateTemplatePreview(template)}
+                            className="tl-card-preview-iframe"
+                            title={`${template.name} 预览`}
+                            sandbox=""
+                            tabIndex={-1}
+                          />
+                        )}
+                        {!showPreview && (
+                          <div className="tl-card-preview-placeholder">
+                            <Icon size={24} style={{ opacity: 0.2 }} />
+                          </div>
+                        )}
+                      </div>
+
                       {/* Type badge */}
                       {isProject && (
                         <div className="tl-badge-project">
@@ -571,6 +779,21 @@ function TemplateDetail({ template, onUse, onClose, onDelete }) {
   const Icon = ICON_MAP[template.icon] || Layout;
   const isProject = template.type === 'project';
   const projectPages = isProject ? parseProjectPages(template.prompt) : [];
+  const [previewPage, setPreviewPage] = useState(0);
+
+  // Generate preview(s)
+  const previewSrc = useMemo(() => {
+    if (isProject && projectPages.length > 0) {
+      return projectPages.map((page) =>
+        generateTemplatePreview({
+          ...template,
+          name: page.name,
+          prompt: page.desc || page.name,
+        })
+      );
+    }
+    return [generateTemplatePreview(template)];
+  }, [template, isProject, projectPages]);
 
   return (
     <div className="tl-detail">
@@ -580,6 +803,32 @@ function TemplateDetail({ template, onUse, onClose, onDelete }) {
           <X size={16} />
         </button>
         <span className="tl-detail-header-title">模板详情</span>
+      </div>
+
+      {/* Preview iframe section */}
+      <div className="tl-detail-preview-section">
+        {isProject && previewSrc.length > 1 && (
+          <div className="tl-detail-preview-tabs">
+            {projectPages.map((page, i) => (
+              <button
+                key={i}
+                className={`tl-detail-preview-tab${i === previewPage ? ' active' : ''}`}
+                onClick={() => setPreviewPage(i)}
+              >
+                <span className="tl-detail-preview-tab-num">{page.num}</span>
+                {page.name}
+              </button>
+            ))}
+          </div>
+        )}
+        <div className="tl-detail-preview-frame-wrap">
+          <iframe
+            srcDoc={previewSrc[previewPage] || previewSrc[0]}
+            className="tl-detail-preview-iframe"
+            title="模板原型预览"
+            sandbox=""
+          />
+        </div>
       </div>
 
       {/* Detail body */}
@@ -633,7 +882,13 @@ function TemplateDetail({ template, onUse, onClose, onDelete }) {
             <span className="tl-detail-label">包含页面 ({projectPages.length})</span>
             <div className="tl-detail-pages">
               {projectPages.map((page, i) => (
-                <div key={i} className="tl-detail-page-item">
+                <div
+                  key={i}
+                  className={`tl-detail-page-item${i === previewPage ? ' active-preview' : ''}`}
+                  onClick={() => setPreviewPage(i)}
+                  role="button"
+                  tabIndex={0}
+                >
                   <span className="tl-detail-page-num">{page.num}</span>
                   <div className="tl-detail-page-info">
                     <span className="tl-detail-page-name">{page.name}</span>
